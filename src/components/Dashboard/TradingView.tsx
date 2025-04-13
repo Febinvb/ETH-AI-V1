@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
-import { fetchSignal, SignalData } from "@/api/mockApi";
+import { getSignal, refreshSignal, SignalData } from "@/api/signal";
 
 interface TradingViewProps {
   symbol?: string;
@@ -49,12 +49,17 @@ const TradingView = ({
     }
   };
 
-  // Fetch signal data when timeframe changes
+  // Fetch signal data when timeframe or symbol changes
   useEffect(() => {
     const fetchSignalData = async () => {
       setLoading(true);
       try {
-        const data = await fetchSignal(currentTimeframe);
+        const data = await getSignal(
+          currentTimeframe,
+          currentSymbol.includes(":")
+            ? currentSymbol.split(":")[1]
+            : currentSymbol,
+        );
         if (onSignalUpdate) {
           onSignalUpdate(data);
         }
@@ -66,7 +71,7 @@ const TradingView = ({
     };
 
     fetchSignalData();
-  }, [currentTimeframe, onSignalUpdate]);
+  }, [currentTimeframe, currentSymbol, onSignalUpdate]);
 
   // Update interval when timeframe changes
   useEffect(() => {
@@ -147,14 +152,24 @@ const TradingView = ({
 
   const handleRefresh = () => {
     // Re-fetch signal data
+    setLoading(true);
     if (containerRef.current) {
       containerRef.current.innerHTML = "";
     }
-    fetchSignal(currentTimeframe).then((data) => {
-      if (onSignalUpdate) {
-        onSignalUpdate(data);
-      }
-    });
+    const plainSymbol = currentSymbol.includes(":")
+      ? currentSymbol.split(":")[1]
+      : currentSymbol;
+    refreshSignal(currentTimeframe, plainSymbol)
+      .then((data) => {
+        if (onSignalUpdate) {
+          onSignalUpdate(data);
+        }
+        setLoading(false);
+      })
+      .catch((error) => {
+        console.error("Error refreshing signal data:", error);
+        setLoading(false);
+      });
   };
 
   const handleSymbolChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
@@ -166,6 +181,23 @@ const TradingView = ({
         : newSymbol;
       onSymbolChange(plainSymbol);
     }
+
+    // When symbol changes, we need to refresh the signal data
+    setLoading(true);
+    const plainSymbol = newSymbol.includes(":")
+      ? newSymbol.split(":")[1]
+      : newSymbol;
+    getSignal(currentTimeframe, plainSymbol)
+      .then((data) => {
+        if (onSignalUpdate) {
+          onSignalUpdate(data);
+        }
+        setLoading(false);
+      })
+      .catch((error) => {
+        console.error("Error fetching signal data for new symbol:", error);
+        setLoading(false);
+      });
   };
 
   return (

@@ -57,7 +57,7 @@ class TradeAnalyzer {
   > = new Map();
 
   private maxTrades = 200; // Increased to have more data for indicators
-  private signalCooldown = 60000; // 1 minute cooldown between signals
+  private signalCooldown = 0; // No cooldown between signals to ensure immediate updates
   private currentSymbol = "ethusdt"; // Default symbol
 
   // Initialize data structure for a new symbol
@@ -175,13 +175,17 @@ class TradeAnalyzer {
     const now = Date.now();
     if (
       symbolData.lastSignalTime > 0 &&
-      now - symbolData.lastSignalTime < this.signalCooldown
+      now - symbolData.lastSignalTime < this.signalCooldown &&
+      symbolData.lastSignal !== null
     ) {
+      console.log(
+        `Signal in cooldown period, returning last signal for ${targetSymbol}`,
+      );
       return symbolData.lastSignal;
     }
 
-    // Increase cooldown to reduce signal flipping
-    this.signalCooldown = 300000; // 5 minutes
+    // No cooldown to ensure immediate signal updates
+    this.signalCooldown = 0; // No cooldown
 
     // Need at least some trades to generate a signal
     if (symbolData.recentTrades.length < 20) {
@@ -206,9 +210,15 @@ class TradeAnalyzer {
     const mediumTermPriceChange = this.calculatePriceChange(10, targetSymbol); // Last 10 trades
     const longTermPriceChange = this.calculatePriceChange(20, targetSymbol); // Last 20 trades
 
-    // Generate ML prediction
+    // Generate ML prediction with enhanced features
     const features = prepareFeatures(
-      indicators,
+      {
+        ...indicators,
+        recentLow: recentLow,
+        recentHigh: recentHigh,
+        recentVolumeAvg: recentVolumeAvg,
+        longerVolumeAvg: longerVolumeAvg,
+      },
       shortTermPriceChange,
       volumeIncreasing,
     );
@@ -245,7 +255,7 @@ class TradeAnalyzer {
     if (rsi !== undefined && rsi < 30) {
       buySignals++;
       buyConfidence += 20;
-      buyReasoning += `RSI is oversold (${rsi.toFixed(2)}) indicating potential reversal. `;
+      buyReasoning += `RSI is oversold (${rsi.toFixed(2)}) indicating potential bullish reversal. `;
     }
 
     // 2. MACD crossover (buy signal)
@@ -293,7 +303,7 @@ class TradeAnalyzer {
     if (bollingerLower !== undefined && currentPrice < bollingerLower * 1.01) {
       buySignals++;
       buyConfidence += 15;
-      buyReasoning += `Price (${currentPrice.toFixed(4)}) is near/below Bollinger lower band (${bollingerLower.toFixed(4)}), indicating oversold condition. `;
+      buyReasoning += `Price (${currentPrice.toFixed(4)}) is near/below Bollinger lower band (${bollingerLower.toFixed(4)}), indicating oversold condition with potential upward reversion. `;
     }
 
     // 8. Bollinger Band squeeze (low volatility often precedes breakout)
@@ -305,7 +315,7 @@ class TradeAnalyzer {
       ) {
         buySignals++;
         buyConfidence += 10;
-        buyReasoning += `Bollinger Band squeeze detected (width: ${bollingerWidth.toFixed(4)}), potential for upward breakout. `;
+        buyReasoning += `Bollinger Band squeeze detected (width: ${bollingerWidth.toFixed(4)}), indicating low volatility with potential for significant upward breakout. `;
       }
     }
 
@@ -318,7 +328,7 @@ class TradeAnalyzer {
     if (rsi !== undefined && rsi > 70) {
       sellSignals++;
       sellConfidence += 20;
-      sellReasoning += `RSI is overbought (${rsi.toFixed(2)}) indicating potential reversal. `;
+      sellReasoning += `RSI is overbought (${rsi.toFixed(2)}) indicating potential bearish reversal. `;
     }
 
     // 2. MACD crossover (sell signal)
@@ -366,7 +376,7 @@ class TradeAnalyzer {
     if (bollingerUpper !== undefined && currentPrice > bollingerUpper * 0.99) {
       sellSignals++;
       sellConfidence += 15;
-      sellReasoning += `Price (${currentPrice.toFixed(4)}) is near/above Bollinger upper band (${bollingerUpper.toFixed(4)}), indicating overbought condition. `;
+      sellReasoning += `Price (${currentPrice.toFixed(4)}) is near/above Bollinger upper band (${bollingerUpper.toFixed(4)}), indicating overbought condition with potential downward reversion. `;
     }
 
     // 8. Bollinger Band squeeze (low volatility often precedes breakout)
@@ -378,19 +388,19 @@ class TradeAnalyzer {
       ) {
         sellSignals++;
         sellConfidence += 10;
-        sellReasoning += `Bollinger Band squeeze detected (width: ${bollingerWidth.toFixed(4)}), potential for downward breakout. `;
+        sellReasoning += `Bollinger Band squeeze detected (width: ${bollingerWidth.toFixed(4)}), indicating low volatility with potential for significant downward breakout. `;
       }
     }
 
-    // Decision logic - require at least 3 signals for a BUY or SELL
-    if (buySignals >= 3 && buySignals > sellSignals + 1) {
+    // Decision logic - require at least 3 signals for a BUY or SELL with stronger threshold
+    if (buySignals >= 3 && buySignals > sellSignals + 2) {
       signal = "BUY";
       confidence = Math.min(90, 50 + buyConfidence);
-      reasoning = `BUY signal based on ${buySignals} indicators. ${buyReasoning}`;
-    } else if (sellSignals >= 3 && sellSignals > buySignals + 1) {
+      reasoning = `BUY signal based on ${buySignals} technical indicators. ${buyReasoning}`;
+    } else if (sellSignals >= 3 && sellSignals > buySignals + 2) {
       signal = "SELL";
       confidence = Math.min(90, 50 + sellConfidence);
-      reasoning = `SELL signal based on ${sellSignals} indicators. ${sellReasoning}`;
+      reasoning = `SELL signal based on ${sellSignals} technical indicators. ${sellReasoning}`;
     } else {
       // Default to HOLD when signals are mixed or weak
       signal = "HOLD";
@@ -402,30 +412,181 @@ class TradeAnalyzer {
       if (buySignals > 0 || sellSignals > 0) {
         reasoning += ` (Buy signals: ${buySignals}, Sell signals: ${sellSignals})`;
       }
+
+      // Check if we have a previous signal and maintain it with reduced confidence if it's recent
+      if (
+        symbolData.lastSignal &&
+        now - symbolData.lastSignalTime < 1800000 && // 30 minutes
+        (symbolData.lastSignal.signal === "BUY" ||
+          symbolData.lastSignal.signal === "SELL")
+      ) {
+        // Maintain previous signal but with reduced confidence
+        signal = symbolData.lastSignal.signal;
+        confidence = Math.max(50, symbolData.lastSignal.confidence - 5); // Gradually reduce confidence
+        reasoning = `Maintaining previous ${signal} signal with reduced confidence. ${reasoning}`;
+      }
     }
 
-    // Calculate entry point, stop loss, and target price
+    // Calculate entry point, stop loss, and target price with improved accuracy
     const entryPoint = currentPrice;
 
-    // For BUY signals: stop loss below recent low, target above based on risk/reward
-    // For SELL signals: stop loss above recent high, target below based on risk/reward
-    const recentLow = Math.min(...symbolData.priceHistory.slice(0, 20));
-    const recentHigh = Math.max(...symbolData.priceHistory.slice(0, 20));
+    // For BUY signals: stop loss below recent low, target above based on dynamic risk/reward
+    // For SELL signals: stop loss above recent high, target below based on dynamic risk/reward
+
+    // Use more data points for recent highs/lows based on volatility
+    const volatilityFactor =
+      bollingerWidth !== undefined
+        ? Math.max(10, Math.min(50, Math.round(50 * bollingerWidth)))
+        : 20;
+
+    const recentLow = Math.min(
+      ...symbolData.priceHistory.slice(0, volatilityFactor),
+    );
+    const recentHigh = Math.max(
+      ...symbolData.priceHistory.slice(0, volatilityFactor),
+    );
+
+    // Calculate price volatility as a percentage
+    const priceRange = recentHigh - recentLow;
+    const volatilityPercentage = priceRange / entryPoint;
+
+    // Adjust stop loss distance based on volatility and ML confidence
+    let stopLossBuffer = Math.max(
+      0.005,
+      Math.min(0.03, volatilityPercentage * 0.5),
+    );
+
+    // If ML model has high confidence and agrees with the signal, we can tighten the stop loss
+    // If ML model disagrees or has low confidence, we should widen the stop loss for safety
+    if (mlPrediction && mlPrediction.probability > 0.6) {
+      if (mlPrediction.predictedSignal === signal) {
+        // ML agrees with technical indicators - can tighten stop loss slightly
+        stopLossBuffer *= 1 - (mlPrediction.probability - 0.6) * 0.5; // Up to 20% tighter
+      } else if (mlPrediction.probability > 0.75) {
+        // ML strongly disagrees - widen stop loss for safety
+        stopLossBuffer *= 1 + (mlPrediction.probability - 0.6) * 0.75; // Up to 30% wider
+      }
+    }
+
+    // Calculate dynamic risk-reward ratio based on signal strength, market conditions, and ML confidence
+    // Higher confidence = higher risk-reward ratio
+    let dynamicRiskRewardRatio;
+
+    // Base risk-reward ratio based on technical indicator signals
+    if (buySignals >= 5 || sellSignals >= 5) {
+      // Strong signal = higher risk-reward
+      dynamicRiskRewardRatio = 3.0;
+    } else if (buySignals >= 4 || sellSignals >= 4) {
+      dynamicRiskRewardRatio = 2.5;
+    } else {
+      // Default risk-reward ratio
+      dynamicRiskRewardRatio = 2.0;
+    }
+
+    // Adjust risk-reward ratio based on ML model confidence if available
+    if (mlPrediction && mlPrediction.probability > 0.5) {
+      // Scale the adjustment based on how confident the ML model is (0.5 to 1.0)
+      // Higher ML confidence increases the risk-reward ratio
+      const mlConfidenceAdjustment = (mlPrediction.probability - 0.5) * 2; // 0 to 1 scale
+
+      // Apply a weighted adjustment to the risk-reward ratio
+      // More weight to ML prediction when it strongly agrees with the signal
+      if (mlPrediction.predictedSignal === signal) {
+        // ML agrees with technical indicators - boost risk-reward ratio
+        dynamicRiskRewardRatio *= 1 + mlConfidenceAdjustment * 0.5; // Up to 50% increase
+      } else if (mlPrediction.probability > 0.8) {
+        // ML strongly disagrees - reduce risk-reward ratio
+        dynamicRiskRewardRatio *= 1 - mlConfidenceAdjustment * 0.3; // Up to 30% decrease
+      }
+
+      // Cap the risk-reward ratio to reasonable limits
+      dynamicRiskRewardRatio = Math.max(
+        1.5,
+        Math.min(4.0, dynamicRiskRewardRatio),
+      );
+    }
+
+    // Adjust risk-reward ratio based on volatility
+    // Higher volatility = slightly lower risk-reward ratio to account for increased risk
+    if (bollingerWidth !== undefined) {
+      if (bollingerWidth > 0.05) {
+        // High volatility
+        dynamicRiskRewardRatio *= 0.9;
+      } else if (bollingerWidth < 0.02) {
+        // Low volatility
+        dynamicRiskRewardRatio *= 1.1;
+      }
+    }
+
+    // Final cap on risk-reward ratio to ensure it stays within reasonable bounds
+    dynamicRiskRewardRatio = Math.max(
+      1.5,
+      Math.min(4.0, dynamicRiskRewardRatio),
+    );
 
     let stopLoss, targetPrice;
 
     if (signal === "BUY") {
-      stopLoss = recentLow * 0.99; // 1% below recent low
+      // For BUY: stop loss below recent low with buffer
+      stopLoss = recentLow * (1 - stopLossBuffer);
+
+      // Ensure stop loss is not too far from entry (max 10%)
+      stopLoss = Math.max(entryPoint * 0.9, stopLoss);
+
       const risk = entryPoint - stopLoss;
-      targetPrice = entryPoint + risk * 2; // 2:1 reward/risk ratio
+      targetPrice = entryPoint + risk * dynamicRiskRewardRatio;
+
+      // Apply ML confidence to fine-tune target price
+      if (
+        mlPrediction &&
+        mlPrediction.predictedSignal === "BUY" &&
+        mlPrediction.probability > 0.7
+      ) {
+        // If ML strongly agrees with BUY, we can be more aggressive with target
+        const mlBoost = (mlPrediction.probability - 0.7) * 3.33; // 0 to 1 scale for 0.7 to 1.0 probability
+        targetPrice =
+          entryPoint + risk * dynamicRiskRewardRatio * (1 + mlBoost * 0.2); // Up to 20% higher target
+      }
     } else if (signal === "SELL") {
-      stopLoss = recentHigh * 1.01; // 1% above recent high
+      // For SELL: stop loss above recent high with buffer
+      stopLoss = recentHigh * (1 + stopLossBuffer);
+
+      // Ensure stop loss is not too far from entry (max 10%)
+      stopLoss = Math.min(entryPoint * 1.1, stopLoss);
+
       const risk = stopLoss - entryPoint;
-      targetPrice = entryPoint - risk * 2; // 2:1 reward/risk ratio
+      targetPrice = entryPoint - risk * dynamicRiskRewardRatio;
+
+      // Apply ML confidence to fine-tune target price
+      if (
+        mlPrediction &&
+        mlPrediction.predictedSignal === "SELL" &&
+        mlPrediction.probability > 0.7
+      ) {
+        // If ML strongly agrees with SELL, we can be more aggressive with target
+        const mlBoost = (mlPrediction.probability - 0.7) * 3.33; // 0 to 1 scale for 0.7 to 1.0 probability
+        targetPrice =
+          entryPoint - risk * dynamicRiskRewardRatio * (1 + mlBoost * 0.2); // Up to 20% lower target
+      }
     } else {
-      // For HOLD signals
-      stopLoss = entryPoint * 0.95; // 5% below current price
-      targetPrice = entryPoint * 1.05; // 5% above current price
+      // For HOLD signals: use more conservative values
+      let holdRiskPercentage = Math.max(
+        0.03,
+        Math.min(0.07, volatilityPercentage),
+      );
+
+      // If ML model has high confidence in HOLD, adjust the risk percentage
+      if (
+        mlPrediction &&
+        mlPrediction.predictedSignal === "HOLD" &&
+        mlPrediction.probability > 0.6
+      ) {
+        // Reduce risk percentage when ML is confident about HOLD
+        holdRiskPercentage *= 1 - (mlPrediction.probability - 0.6) * 0.5; // Up to 20% reduction
+      }
+
+      stopLoss = entryPoint * (1 - holdRiskPercentage);
+      targetPrice = entryPoint * (1 + holdRiskPercentage * 1.5);
     }
 
     // Format timestamp with timeframe
@@ -453,10 +614,10 @@ class TradeAnalyzer {
       // Increase confidence when ML agrees with technical indicators
       const mlConfidenceBoost = Math.round(mlPrediction.probability * 10);
       generatedSignal.confidence = Math.min(95, confidence + mlConfidenceBoost);
-      generatedSignal.reasoning += ` ML model confirms ${signal} signal (${Math.round(mlPrediction.probability * 100)}% probability).`;
+      generatedSignal.reasoning += ` ML model confirms ${signal} signal with ${Math.round(mlPrediction.probability * 100)}% probability.`;
     } else if (mlPrediction.probability > 0.7) {
       // If ML strongly disagrees, add a note but don't change the signal
-      generatedSignal.reasoning += ` Note: ML model suggests ${mlPrediction.predictedSignal} (${Math.round(mlPrediction.probability * 100)}% probability).`;
+      generatedSignal.reasoning += ` Note: ML model suggests ${mlPrediction.predictedSignal} with ${Math.round(mlPrediction.probability * 100)}% probability, but technical analysis indicates ${signal}.`;
     }
 
     // Update last signal and time

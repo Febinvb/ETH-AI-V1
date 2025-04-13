@@ -22,65 +22,11 @@ export interface SignalData {
 // Use a module-level variable that persists between renders
 const signalCache: Record<string, SignalData> = {};
 
-// Flag to track if mock data has been initialized
-let mockDataInitialized = false;
+// Flag to track if real-time data has been initialized
+let realTimeDataInitialized = false;
 
 // Initialize WebSocket connection
 let isInitialized = false;
-
-// Mock data for development/testing
-const mockSignalData: Record<string, SignalData> = {
-  ethusdt_1h: {
-    signal: "BUY",
-    entryPoint: 3456.78,
-    stopLoss: 3400.5,
-    targetPrice: 3550.25,
-    confidence: 78,
-    reasoning:
-      "BUY signal based on 4 indicators. RSI is oversold (28.45) indicating potential reversal. MACD line (0.0023) crossed above signal line (0.0012). Short-term MA (3455.2500) above long-term MA (3442.7800). Price (3456.7800) is near/below Bollinger lower band (3430.2500), indicating oversold condition.",
-    timestamp: `${new Date().toISOString().replace("T", " ").slice(0, 19)} (1h)`,
-  },
-  btcusdt_1h: {
-    signal: "SELL",
-    entryPoint: 62345.67,
-    stopLoss: 63000.0,
-    targetPrice: 61000.0,
-    confidence: 82,
-    reasoning:
-      "SELL signal based on 5 indicators. RSI is overbought (76.32) indicating potential reversal. MACD line (-0.0018) crossed below signal line (0.0005). Price (62345.6700) is below VWAP (62500.2300). Short-term MA (62340.5000) below long-term MA (62450.7500). Strong negative price action (-0.75%).",
-    timestamp: `${new Date().toISOString().replace("T", " ").slice(0, 19)} (1h)`,
-  },
-  solusdt_1h: {
-    signal: "HOLD",
-    entryPoint: 145.23,
-    stopLoss: 138.5,
-    targetPrice: 152.75,
-    confidence: 65,
-    reasoning:
-      "Mixed or insufficient signals detected. Waiting for clearer trend confirmation before taking action. (Buy signals: 2, Sell signals: 2)",
-    timestamp: `${new Date().toISOString().replace("T", " ").slice(0, 19)} (1h)`,
-  },
-};
-
-// Add more timeframes for the existing symbols
-["1m", "5m", "15m", "4h", "1d"].forEach((timeframe) => {
-  Object.keys(mockSignalData).forEach((key) => {
-    const symbol = key.split("_")[0];
-    const mockData = { ...mockSignalData[`${symbol}_1h`] };
-    mockData.timestamp = `${new Date().toISOString().replace("T", " ").slice(0, 19)} (${timeframe})`;
-    // Slightly modify values for different timeframes
-    mockData.entryPoint =
-      mockData.entryPoint * (1 + (Math.random() * 0.02 - 0.01));
-    mockData.stopLoss = mockData.stopLoss * (1 + (Math.random() * 0.02 - 0.01));
-    mockData.targetPrice =
-      mockData.targetPrice * (1 + (Math.random() * 0.02 - 0.01));
-    mockData.confidence = Math.min(
-      95,
-      Math.max(50, mockData.confidence + Math.floor(Math.random() * 10) - 5),
-    );
-    mockSignalData[`${symbol}_${timeframe}`] = mockData;
-  });
-});
 
 function initializeWebSocket() {
   if (isInitialized) {
@@ -90,29 +36,7 @@ function initializeWebSocket() {
 
   console.log("[API] Initializing Binance WebSocket connection...");
 
-  // In development mode, use mock data instead of actual WebSocket
-  if (import.meta.env.DEV) {
-    console.log(
-      "[API] Running in development mode, using mock data instead of WebSocket",
-    );
-    // Only populate the cache with mock data if it hasn't been initialized yet
-    if (!mockDataInitialized) {
-      console.log("[API] Initializing mock data cache");
-      Object.keys(mockSignalData).forEach((key) => {
-        signalCache[key] = mockSignalData[key];
-      });
-      mockDataInitialized = true;
-      console.log("[API] Mock data initialization complete");
-    } else {
-      console.log(
-        "[API] Mock data cache already populated, skipping initialization",
-      );
-    }
-    isInitialized = true;
-    return;
-  }
-
-  // Connect to Binance WebSocket for production
+  // Connect to Binance WebSocket
   binanceService.connect();
 
   // Listen for trade events
@@ -134,6 +58,44 @@ function initializeWebSocket() {
         signalCache[cacheKey] = convertToSignalData(signal);
       }
     });
+  });
+
+  // Listen for ticker data events
+  binanceService.on("tickerData", (tickerData: any, symbol: string) => {
+    console.log(
+      `[API] Received ticker data from Binance API for ${symbol}:`,
+      tickerData,
+    );
+    // Process ticker data for each timeframe
+    ["1m", "5m", "15m", "1h", "4h", "1d"].forEach((timeframe) => {
+      // Create a basic signal from ticker data if we don't have one yet
+      const cacheKey = `${symbol}_${timeframe}`;
+      if (!signalCache[cacheKey]) {
+        // Create a basic signal based on price movement
+        const priceChange = parseFloat(tickerData.priceChangePercent);
+        const signal: SignalType =
+          priceChange > 1 ? "BUY" : priceChange < -1 ? "SELL" : "HOLD";
+        const price = parseFloat(tickerData.lastPrice);
+
+        const signalData: SignalData = {
+          signal: signal,
+          entryPoint: price,
+          stopLoss: signal === "BUY" ? price * 0.97 : price * 1.03,
+          targetPrice: signal === "BUY" ? price * 1.05 : price * 0.95,
+          confidence: Math.min(95, Math.max(65, Math.abs(priceChange) * 10)),
+          reasoning: `Signal based on price movement. 24h change: ${priceChange}%. Volume: ${tickerData.volume}. Additional indicators being calculated.`,
+          timestamp: `${new Date().toISOString().replace("T", " ").slice(0, 19)} (${timeframe})`,
+        };
+
+        signalCache[cacheKey] = signalData;
+        console.log(
+          `[API] Created initial signal from ticker data for ${symbol} on timeframe: ${timeframe}`,
+          signalData,
+        );
+      }
+    });
+
+    realTimeDataInitialized = true;
   });
 
   // Handle connection events
@@ -185,7 +147,7 @@ export async function getSignal(
   );
 
   // Initialize WebSocket if not already done
-  if (!isInitialized || (import.meta.env.DEV && !mockDataInitialized)) {
+  if (!isInitialized) {
     initializeWebSocket();
   }
 
@@ -196,149 +158,62 @@ export async function getSignal(
   const cacheKey = `${normalizedSymbol}_${timeframe}`;
 
   try {
-    // If we're in development mode, we've already populated the cache with mock data
-    if (import.meta.env.DEV) {
-      // If we have a cached signal for this timeframe and symbol, return it
+    // Force reconnect if not connected
+    if (!binanceService["isConnected"]) {
+      console.log(`[API] WebSocket not connected, attempting to connect...`);
+      binanceService.connect();
+    }
+
+    console.log(
+      `[API] Setting symbol in binance service to: ${normalizedSymbol}`,
+    );
+    binanceService.setSymbol(normalizedSymbol);
+
+    // If we have a cached signal for this timeframe and symbol, return it
+    if (signalCache[cacheKey]) {
+      console.log(
+        `[API] Returning cached signal for timeframe: ${timeframe} and symbol: ${normalizedSymbol}`,
+        signalCache[cacheKey],
+      );
+      return signalCache[cacheKey];
+    }
+
+    // If we're connected but don't have a signal yet, wait a bit and check again
+    if (binanceService["isConnected"]) {
+      console.log(
+        `[API] WebSocket connected but no signal yet for timeframe: ${timeframe} and symbol: ${normalizedSymbol}, waiting...`,
+      );
+      // Minimal wait time to see if we get a signal
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      // Check again after waiting
       if (signalCache[cacheKey]) {
         console.log(
-          `[API] Returning cached mock signal for timeframe: ${timeframe} and symbol: ${normalizedSymbol}`,
+          `[API] Signal received after waiting for timeframe: ${timeframe} and symbol: ${normalizedSymbol}`,
           signalCache[cacheKey],
         );
         return signalCache[cacheKey];
-      }
-
-      // If the exact key doesn't exist, try to find a similar one (any timeframe for the symbol)
-      const similarKeys = Object.keys(signalCache).filter((key) =>
-        key.startsWith(normalizedSymbol),
-      );
-      if (similarKeys.length > 0) {
-        console.log(
-          `[API] Exact mock data not found, creating derived mock data for symbol: ${normalizedSymbol} from ${similarKeys[0]}`,
-          signalCache[similarKeys[0]],
-        );
-        // Clone the data and update the timestamp to match the requested timeframe
-        const mockData = { ...signalCache[similarKeys[0]] };
-        mockData.timestamp = `${new Date().toISOString().replace("T", " ").slice(0, 19)} (${timeframe})`;
-        signalCache[cacheKey] = mockData;
-        return mockData;
-      }
-
-      // If no similar keys exist, we'll create a new mock signal below
-      console.log(
-        `[API] No similar mock data found for symbol: ${normalizedSymbol}, creating new mock signal`,
-      );
-    } else {
-      // For production: Force reconnect if not connected
-      if (!binanceService["isConnected"]) {
-        console.log(`[API] WebSocket not connected, attempting to connect...`);
-        binanceService.connect();
-      }
-
-      console.log(
-        `[API] Setting symbol in binance service to: ${normalizedSymbol}`,
-      );
-      binanceService.setSymbol(normalizedSymbol);
-
-      // If we have a cached signal for this timeframe and symbol, return it
-      if (signalCache[cacheKey]) {
-        console.log(
-          `[API] Returning cached signal for timeframe: ${timeframe} and symbol: ${normalizedSymbol}`,
-          signalCache[cacheKey],
-        );
-        return signalCache[cacheKey];
-      }
-
-      // If we're connected but don't have a signal yet, wait a bit and check again
-      if (binanceService["isConnected"]) {
-        console.log(
-          `[API] WebSocket connected but no signal yet for timeframe: ${timeframe} and symbol: ${normalizedSymbol}, waiting...`,
-        );
-        // Wait for a short time to see if we get a signal
-        await new Promise((resolve) => setTimeout(resolve, 500));
-
-        // Check again after waiting
-        if (signalCache[cacheKey]) {
-          console.log(
-            `[API] Signal received after waiting for timeframe: ${timeframe} and symbol: ${normalizedSymbol}`,
-            signalCache[cacheKey],
-          );
-          return signalCache[cacheKey];
-        }
       }
     }
 
-    // If we still don't have a signal, create a default one with realistic mock data
+    // If we still don't have a signal, create a waiting signal
     console.log(
-      `[API] No signal available for timeframe: ${timeframe} and symbol: ${normalizedSymbol}, creating mock signal`,
+      `[API] No signal available for timeframe: ${timeframe} and symbol: ${normalizedSymbol}, creating waiting signal`,
     );
 
-    // Create a realistic mock signal based on the symbol
-    const mockPrice = normalizedSymbol.includes("btc")
-      ? 62345.67
-      : normalizedSymbol.includes("eth")
-        ? 3456.78
-        : normalizedSymbol.includes("sol")
-          ? 145.23
-          : normalizedSymbol.includes("bnb")
-            ? 567.89
-            : normalizedSymbol.includes("ada")
-              ? 0.45
-              : normalizedSymbol.includes("doge")
-                ? 0.12
-                : normalizedSymbol.includes("xrp")
-                  ? 0.56
-                  : normalizedSymbol.includes("dot")
-                    ? 6.78
-                    : normalizedSymbol.includes("link")
-                      ? 12.34
-                      : normalizedSymbol.includes("matic")
-                        ? 0.78
-                        : normalizedSymbol.includes("avax")
-                          ? 34.56
-                          : 100.0;
-
-    // Randomly select a signal type with weighted probability
-    const signalType: SignalType =
-      Math.random() < 0.4 ? "BUY" : Math.random() < 0.7 ? "SELL" : "HOLD";
-
-    // Calculate realistic values based on the signal type
-    const entryPoint = mockPrice;
-    const stopLoss = signalType === "BUY" ? mockPrice * 0.97 : mockPrice * 1.03;
-    const targetPrice =
-      signalType === "BUY" ? mockPrice * 1.05 : mockPrice * 0.95;
-    const confidence = Math.floor(Math.random() * 30) + 65; // 65-95%
-
-    // Generate realistic reasoning based on signal type
-    let reasoning = "";
-    if (signalType === "BUY") {
-      reasoning = `BUY signal based on ${Math.floor(Math.random() * 3) + 3} indicators. `;
-      reasoning += `RSI is oversold (${(Math.random() * 10 + 20).toFixed(2)}) indicating potential reversal. `;
-      reasoning += `MACD line (${(Math.random() * 0.01).toFixed(4)}) crossed above signal line (${(Math.random() * 0.005).toFixed(4)}). `;
-      reasoning += `Short-term MA (${(mockPrice + Math.random() * 5).toFixed(4)}) above long-term MA (${(mockPrice - Math.random() * 5).toFixed(4)}). `;
-    } else if (signalType === "SELL") {
-      reasoning = `SELL signal based on ${Math.floor(Math.random() * 3) + 3} indicators. `;
-      reasoning += `RSI is overbought (${(Math.random() * 10 + 70).toFixed(2)}) indicating potential reversal. `;
-      reasoning += `MACD line (${(-Math.random() * 0.01).toFixed(4)}) crossed below signal line (${(Math.random() * 0.005).toFixed(4)}). `;
-      reasoning += `Short-term MA (${(mockPrice - Math.random() * 5).toFixed(4)}) below long-term MA (${(mockPrice + Math.random() * 5).toFixed(4)}). `;
-    } else {
-      reasoning =
-        "Mixed or insufficient signals detected. Waiting for clearer trend confirmation before taking action. ";
-      reasoning += `(Buy signals: ${Math.floor(Math.random() * 3) + 1}, Sell signals: ${Math.floor(Math.random() * 3) + 1})`;
-    }
-
-    const mockSignal: SignalData = {
-      signal: signalType,
-      entryPoint,
-      stopLoss,
-      targetPrice,
-      confidence,
-      reasoning,
+    // Create a waiting signal
+    const waitingSignal: SignalData = {
+      signal: "HOLD",
+      entryPoint: 0,
+      stopLoss: 0,
+      targetPrice: 0,
+      confidence: 0,
+      reasoning: `Waiting for live data from Binance for ${symbol}. Please wait a moment or try refreshing.`,
       timestamp: `${new Date().toISOString().replace("T", " ").slice(0, 19)} (${timeframe})`,
     };
 
-    // Cache the mock signal
-    signalCache[cacheKey] = mockSignal;
-    return mockSignal;
+    // Don't cache this waiting signal
+    return waitingSignal;
   } catch (error) {
     console.error("Failed to fetch signal data:", error);
 
@@ -387,7 +262,7 @@ export async function refreshSignal(
     `[API] Manually refreshing signal for timeframe: ${timeframe} and symbol: ${symbol}`,
   );
 
-  // Ensure WebSocket is initialized (which also initializes mock data in dev mode)
+  // Ensure WebSocket is initialized
   if (!isInitialized) {
     initializeWebSocket();
   }
@@ -398,120 +273,60 @@ export async function refreshSignal(
   // Create a cache key combining symbol and timeframe
   const cacheKey = `${normalizedSymbol}_${timeframe}`;
 
-  // In development mode, generate a new random signal only on explicit refresh
-  if (import.meta.env.DEV) {
-    // If we're in development mode but mock data hasn't been initialized yet, do it now
-    if (!mockDataInitialized) {
-      initializeWebSocket();
-    }
-    console.log(`[API] Generating new mock signal for explicit refresh`);
+  // Force a fresh ticker data fetch
+  try {
+    // Always clear the cache when manually refreshing to ensure we get fresh market data
+    console.log(
+      `[API] Clearing cache for ${cacheKey} to generate fresh signal`,
+    );
+    delete signalCache[cacheKey];
 
-    // Get the current cached signal if it exists
-    const currentSignal = signalCache[cacheKey];
-
-    // If we have a current signal, use its values as a base to avoid dramatic changes
-    let basePrice;
-    if (currentSignal) {
-      // Use the current entry point as the base price, with small variation
-      basePrice =
-        currentSignal.entryPoint * (1 + (Math.random() * 0.01 - 0.005));
-    } else {
-      // If no current signal, create a realistic base price based on the symbol
-      basePrice = normalizedSymbol.includes("btc")
-        ? 62345.67
-        : normalizedSymbol.includes("eth")
-          ? 3456.78
-          : normalizedSymbol.includes("sol")
-            ? 145.23
-            : normalizedSymbol.includes("bnb")
-              ? 567.89
-              : normalizedSymbol.includes("ada")
-                ? 0.45
-                : normalizedSymbol.includes("doge")
-                  ? 0.12
-                  : normalizedSymbol.includes("xrp")
-                    ? 0.56
-                    : normalizedSymbol.includes("dot")
-                      ? 6.78
-                      : normalizedSymbol.includes("link")
-                        ? 12.34
-                        : normalizedSymbol.includes("matic")
-                          ? 0.78
-                          : normalizedSymbol.includes("avax")
-                            ? 34.56
-                            : 100.0;
+    // Make sure we're connected
+    if (!binanceService["isConnected"]) {
+      binanceService.connect();
     }
 
-    // Add small random variation to the price for the refresh
-    const updatedPrice = basePrice * (1 + (Math.random() * 0.01 - 0.005));
+    // Set the symbol to ensure we get data for it
+    binanceService.setSymbol(normalizedSymbol);
 
-    // If we have a current signal, keep the same signal type with 80% probability
-    // This creates more stability in the signals
-    let signalType: SignalType;
-    if (currentSignal && Math.random() < 0.8) {
-      signalType = currentSignal.signal;
-    } else {
-      // Otherwise, randomly select a signal type with weighted probability
-      signalType =
-        Math.random() < 0.4 ? "BUY" : Math.random() < 0.7 ? "SELL" : "HOLD";
-    }
+    // Trigger a manual ticker data fetch
+    await new Promise<void>((resolve) => {
+      // Set up a one-time listener for ticker data
+      const tickerHandler = (data: any, tickerSymbol: string) => {
+        if (tickerSymbol === normalizedSymbol) {
+          // Process the ticker data
+          console.log(
+            `[API] Received fresh ticker data for ${normalizedSymbol}`,
+          );
+          binanceService.off("tickerData", tickerHandler);
+          resolve();
+        }
+      };
 
-    // Calculate realistic values based on the signal type
-    const entryPoint = updatedPrice;
-    const stopLoss =
-      signalType === "BUY" ? updatedPrice * 0.97 : updatedPrice * 1.03;
-    const targetPrice =
-      signalType === "BUY" ? updatedPrice * 1.05 : updatedPrice * 0.95;
+      binanceService.on("tickerData", tickerHandler);
 
-    // If we have a current signal, keep similar confidence with small variation
-    const confidence = currentSignal
-      ? Math.min(
-          95,
-          Math.max(
-            65,
-            currentSignal.confidence + (Math.floor(Math.random() * 7) - 3),
-          ),
-        )
-      : Math.floor(Math.random() * 30) + 65; // 65-95% for new signals
+      // Fetch the ticker data
+      console.log(
+        `[API] Manually fetching ticker data for ${normalizedSymbol}`,
+      );
+      binanceService["fetchTickerData"](normalizedSymbol);
 
-    // Generate realistic reasoning based on signal type
-    let reasoning = "";
-    if (signalType === "BUY") {
-      reasoning = `BUY signal based on ${Math.floor(Math.random() * 3) + 3} indicators. `;
-      reasoning += `RSI is oversold (${(Math.random() * 10 + 20).toFixed(2)}) indicating potential reversal. `;
-      reasoning += `MACD line (${(Math.random() * 0.01).toFixed(4)}) crossed above signal line (${(Math.random() * 0.005).toFixed(4)}). `;
-      reasoning += `Short-term MA (${(updatedPrice + Math.random() * 5).toFixed(4)}) above long-term MA (${(updatedPrice - Math.random() * 5).toFixed(4)}). `;
-    } else if (signalType === "SELL") {
-      reasoning = `SELL signal based on ${Math.floor(Math.random() * 3) + 3} indicators. `;
-      reasoning += `RSI is overbought (${(Math.random() * 10 + 70).toFixed(2)}) indicating potential reversal. `;
-      reasoning += `MACD line (${(-Math.random() * 0.01).toFixed(4)}) crossed below signal line (${(Math.random() * 0.005).toFixed(4)}). `;
-      reasoning += `Short-term MA (${(updatedPrice - Math.random() * 5).toFixed(4)}) below long-term MA (${(updatedPrice + Math.random() * 5).toFixed(4)}). `;
-    } else {
-      reasoning =
-        "Mixed or insufficient signals detected. Waiting for clearer trend confirmation before taking action. ";
-      reasoning += `(Buy signals: ${Math.floor(Math.random() * 3) + 1}, Sell signals: ${Math.floor(Math.random() * 3) + 1})`;
-    }
+      // Set a timeout in case we don't get a response
+      setTimeout(() => {
+        binanceService.off("tickerData", tickerHandler);
+        resolve();
+      }, 1000);
+    });
 
-    const mockSignal: SignalData = {
-      signal: signalType,
-      entryPoint,
-      stopLoss,
-      targetPrice,
-      confidence,
-      reasoning,
-      timestamp: `${new Date().toISOString().replace("T", " ").slice(0, 19)} (${timeframe})`,
-    };
+    // Minimal wait time for the signal to be processed
+    await new Promise((resolve) => setTimeout(resolve, 50));
 
-    // Cache the mock signal
-    signalCache[cacheKey] = mockSignal;
-    return mockSignal;
+    // Get the fresh signal
+    return getSignal(timeframe, symbol);
+  } catch (error) {
+    console.error(`[API] Error refreshing signal: ${error}`);
+    return getSignal(timeframe, symbol);
   }
-
-  // For production: Don't clear analyzer data on refresh to maintain signal stability
-  // Only update with new data
-
-  // Get a fresh signal
-  return getSignal(timeframe, symbol);
 }
 
 // Function to change the symbol
@@ -521,16 +336,27 @@ export function changeSymbol(symbol: string): void {
 
   console.log(`[API] Changing symbol to: ${actualSymbol}`);
 
-  // In development mode, we don't want to clear all cached signals
-  // Instead, we'll only clear signals for the current symbol if needed
+  // Clear analyzer data when changing symbols to prevent signal contamination
+  clearAnalyzerData();
+
+  // Clear the specific symbol's cache entries to force fresh data
+  const normalizedSymbol = actualSymbol.toLowerCase();
+  const timeframes = ["1m", "5m", "15m", "1h", "4h", "1d"];
+
+  // Remove existing cache entries for this symbol
+  timeframes.forEach((tf) => {
+    const cacheKey = `${normalizedSymbol}_${tf}`;
+    if (signalCache[cacheKey]) {
+      console.log(`[API] Clearing cache for ${cacheKey}`);
+      delete signalCache[cacheKey];
+    }
+  });
+
+  // In development mode, we want to create mock data for the new symbol
   if (import.meta.env.DEV) {
     console.log(
-      `[API] Development mode: Preserving signal cache when changing symbol`,
+      `[API] Development mode: Creating mock data for new symbol: ${normalizedSymbol}`,
     );
-
-    // Ensure we have mock data for this symbol
-    const normalizedSymbol = actualSymbol.toLowerCase();
-    const timeframes = ["1m", "5m", "15m", "1h", "4h", "1d"];
 
     // Check if we have any data for this symbol
     const hasSymbolData = timeframes.some((tf) => {
@@ -565,6 +391,10 @@ export function changeSymbol(symbol: string): void {
           else if (normalizedSymbol.includes("ada")) priceMultiplier = 0.5;
           else if (normalizedSymbol.includes("doge")) priceMultiplier = 0.1;
           else if (normalizedSymbol.includes("xrp")) priceMultiplier = 0.5;
+          else if (normalizedSymbol.includes("dot")) priceMultiplier = 10;
+          else if (normalizedSymbol.includes("link")) priceMultiplier = 15;
+          else if (normalizedSymbol.includes("matic")) priceMultiplier = 1;
+          else if (normalizedSymbol.includes("avax")) priceMultiplier = 30;
 
           // Update the price values
           clonedSignal.entryPoint =
@@ -574,23 +404,42 @@ export function changeSymbol(symbol: string): void {
           clonedSignal.targetPrice =
             (clonedSignal.targetPrice * priceMultiplier) / 1000;
 
+          // Randomize the signal type for variety
+          const signals: SignalType[] = ["BUY", "SELL", "HOLD"];
+          clonedSignal.signal =
+            signals[Math.floor(Math.random() * signals.length)];
+
+          // Adjust confidence based on signal type
+          clonedSignal.confidence =
+            clonedSignal.signal === "HOLD"
+              ? Math.floor(Math.random() * 30) + 50 // 50-80% for HOLD
+              : Math.floor(Math.random() * 20) + 70; // 70-90% for BUY/SELL
+
+          // Update reasoning
+          clonedSignal.reasoning = `Signal generated for ${actualSymbol.toUpperCase()} based on technical analysis. ${clonedSignal.signal === "BUY" ? "Bullish momentum detected with increasing volume." : clonedSignal.signal === "SELL" ? "Bearish divergence observed with resistance level rejection." : "Consolidation pattern detected, waiting for breakout confirmation."}`;
+
           // Update timestamp
           clonedSignal.timestamp = `${new Date().toISOString().replace("T", " ").slice(0, 19)} (${tf})`;
 
           signalCache[targetKey] = clonedSignal;
+          console.log(
+            `[API] Created mock signal for ${targetKey}:`,
+            clonedSignal,
+          );
         }
       });
     }
-  } else {
-    // In production, clear all cached signals
-    console.log(
-      `[API] Production mode: Clearing signal cache when changing symbol`,
-    );
-    Object.keys(signalCache).forEach((key) => delete signalCache[key]);
   }
 
   // Update the symbol in the binance service
   binanceService.setSymbol(actualSymbol);
+  console.log(`[API] Updated binance service with symbol: ${actualSymbol}`);
+
+  // Force a ticker data fetch for the new symbol
+  if (binanceService["fetchTickerData"]) {
+    console.log(`[API] Forcing ticker data fetch for: ${actualSymbol}`);
+    binanceService["fetchTickerData"](actualSymbol.toLowerCase());
+  }
 }
 
 // Function to get available symbols

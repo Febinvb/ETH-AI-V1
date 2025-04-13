@@ -67,6 +67,14 @@ const Home = () => {
       ? newSymbol.split(":")[1]
       : newSymbol;
 
+    console.log(`Fetching signal for plain symbol: ${plainSymbol}`);
+
+    // Update the symbol in the binance service to ensure we get data for the new symbol
+    import("@/api/signal").then(({ changeSymbol }) => {
+      changeSymbol(plainSymbol);
+      console.log(`Changed symbol in binance service to: ${plainSymbol}`);
+    });
+
     // Refresh the signal with the new symbol
     setLoading(true);
     setError(null);

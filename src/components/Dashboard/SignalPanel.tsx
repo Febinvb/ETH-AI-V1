@@ -74,7 +74,7 @@ const SignalPanel = ({
   const refreshTimerRef = useRef<number | null>(null);
   const countdownTimerRef = useRef<number | null>(null);
 
-  // Fetch signal data on component mount only
+  // Fetch signal data on component mount and when symbol or timeframe changes
   useEffect(() => {
     if (!signalData) {
       const fetchData = async () => {
@@ -84,6 +84,13 @@ const SignalPanel = ({
           console.log(
             `Fetching signal data for ${symbol} with timeframe ${timeframe}`,
           );
+
+          // Ensure the symbol is set in the binance service
+          import("@/api/signal").then(({ changeSymbol }) => {
+            changeSymbol(symbol);
+            console.log(`Set symbol in binance service to: ${symbol}`);
+          });
+
           const result = await getSignal(timeframe, symbol);
           setData(result);
           console.log(`Live signal data fetched for ${symbol}:`, result);
@@ -122,9 +129,9 @@ const SignalPanel = ({
 
       fetchData();
     }
-    // Only run this effect once on mount and when signalData prop changes
+    // Run this effect when symbol or timeframe changes as well
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [signalData]);
+  }, [signalData, symbol, timeframe]);
 
   // Update data when signalData prop changes
   useEffect(() => {
@@ -202,6 +209,19 @@ const SignalPanel = ({
       setError(
         `Failed to refresh signal data for ${symbol}. Please try again.`,
       );
+      // Keep previous data if available
+      if (!data || data.confidence === 0) {
+        // If we don't have valid data, create a basic error state
+        setData({
+          signal: "HOLD",
+          entryPoint: 0,
+          stopLoss: 0,
+          targetPrice: 0,
+          confidence: 0,
+          reasoning: `Error fetching data for ${symbol}. Please try again.`,
+          timestamp: `${new Date().toISOString().replace("T", " ").slice(0, 19)} (${timeframe})`,
+        });
+      }
     } finally {
       setLoading(false);
     }
@@ -222,22 +242,26 @@ const SignalPanel = ({
 
     // If auto-refresh is enabled, set up the timers
     if (autoRefresh && !loading) {
-      // Set up the refresh timer
+      // Set up the refresh timer with a shorter interval to be more responsive to market changes
+      const refreshInterval = Math.min(autoRefreshInterval, 30000); // Max 30 seconds
       refreshTimerRef.current = window.setInterval(() => {
         handleRefresh();
-      }, autoRefreshInterval);
+      }, refreshInterval);
 
       // Set up the countdown timer
       countdownTimerRef.current = window.setInterval(() => {
         setNextRefreshIn((prev) => {
           if (prev <= 1) {
-            return autoRefreshInterval / 1000;
+            return refreshInterval / 1000;
           }
           return prev - 1;
         });
       }, 1000);
 
       // Initialize countdown
+      setNextRefreshIn(autoRefreshInterval / 1000);
+    } else if (!autoRefresh) {
+      // Reset countdown when auto-refresh is disabled
       setNextRefreshIn(autoRefreshInterval / 1000);
     }
 
@@ -260,12 +284,21 @@ const SignalPanel = ({
   // Handle symbol change
   const handleSymbolChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const newSymbol = e.target.value;
+    console.log(`Symbol change requested to: ${newSymbol}`);
     if (onSymbolChange) {
+      console.log(
+        `Using parent component's onSymbolChange callback for ${newSymbol}`,
+      );
       onSymbolChange(newSymbol);
     } else {
       // If no callback is provided, handle the symbol change internally
+      console.log(`Handling symbol change internally for ${newSymbol}`);
       setLoading(true);
       setError(null);
+      // Reset auto-refresh countdown when changing symbols
+      if (autoRefresh) {
+        setNextRefreshIn(autoRefreshInterval / 1000);
+      }
       // Always use refreshSignal to get a completely fresh signal for the new symbol
       refreshSignal(timeframe, newSymbol)
         .then((result) => {
@@ -297,6 +330,7 @@ const SignalPanel = ({
               value={symbol}
               onChange={handleSymbolChange}
               disabled={loading}
+              aria-label="Select trading pair"
             >
               <option value="ETHUSDT">ETH/USDT</option>
               <option value="BTCUSDT">BTC/USDT</option>
@@ -360,7 +394,7 @@ const SignalPanel = ({
           <div className="flex flex-col items-center justify-center py-8">
             <RefreshCw className="h-8 w-8 animate-spin text-primary mb-2" />
             <p className="text-sm text-muted-foreground">
-              Fetching live signal data...
+              Fetching live signal data for {symbol}...
             </p>
           </div>
         ) : error ? (
@@ -372,6 +406,19 @@ const SignalPanel = ({
               className="px-4 py-2 bg-primary text-primary-foreground rounded-md text-sm hover:bg-primary/90 transition-colors"
             >
               Try Again
+            </button>
+          </div>
+        ) : data.confidence === 0 ? (
+          <div className="flex flex-col items-center justify-center py-8">
+            <Clock className="h-8 w-8 text-yellow-500 mb-2" />
+            <p className="text-sm text-muted-foreground mb-2">
+              {data.reasoning}
+            </p>
+            <button
+              onClick={handleRefresh}
+              className="px-4 py-2 bg-primary text-primary-foreground rounded-md text-sm hover:bg-primary/90 transition-colors"
+            >
+              Refresh
             </button>
           </div>
         ) : (

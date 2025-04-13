@@ -13,6 +13,31 @@ export interface BinanceTradeEvent {
   M: boolean; // Ignore
 }
 
+// Define types for Binance REST API responses
+export interface BinanceTickerData {
+  symbol: string;
+  priceChange: string;
+  priceChangePercent: string;
+  weightedAvgPrice: string;
+  prevClosePrice: string;
+  lastPrice: string;
+  lastQty: string;
+  bidPrice: string;
+  bidQty: string;
+  askPrice: string;
+  askQty: string;
+  openPrice: string;
+  highPrice: string;
+  lowPrice: string;
+  volume: string;
+  quoteVolume: string;
+  openTime: number;
+  closeTime: number;
+  firstId: number;
+  lastId: number;
+  count: number;
+}
+
 export interface BinanceKlineEvent {
   e: string; // Event type
   E: number; // Event time
@@ -114,6 +139,9 @@ export class BinanceService extends BrowserEventEmitter {
       this.ws.onmessage = this.handleMessage.bind(this);
       this.ws.onerror = this.handleError.bind(this);
       this.ws.onclose = this.handleClose.bind(this);
+
+      // Fetch initial ticker data when connecting
+      this.fetchTickerData(this.symbol);
     } catch (error) {
       this.emit(
         "error",
@@ -136,6 +164,11 @@ export class BinanceService extends BrowserEventEmitter {
     if (this.reconnectTimer !== null) {
       window.clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
+    }
+
+    if (this.tickerDataInterval !== null) {
+      window.clearInterval(this.tickerDataInterval);
+      this.tickerDataInterval = null;
     }
 
     this.isConnected = false;
@@ -178,6 +211,63 @@ export class BinanceService extends BrowserEventEmitter {
     this.reconnectAttempts = 0;
     this.emit("connected");
     console.log(`Connected to Binance WebSocket for ${this.symbol}`);
+
+    // Set up a regular ticker data fetch
+    this.startTickerDataInterval();
+  }
+
+  // Fetch ticker data from Binance REST API
+  private async fetchTickerData(symbol: string): Promise<void> {
+    try {
+      // Add a timestamp parameter to prevent caching
+      const timestamp = Date.now();
+      const url = `https://api.binance.com/api/v3/ticker/24hr?symbol=${symbol.toUpperCase()}&_=${timestamp}`;
+
+      console.log(
+        `[BinanceService] Fetching fresh ticker data for ${symbol} at ${new Date().toISOString()}`,
+      );
+
+      const response = await fetch(url, {
+        headers: {
+          "Cache-Control": "no-cache, no-store, must-revalidate",
+          Pragma: "no-cache",
+          Expires: "0",
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const data = (await response.json()) as BinanceTickerData;
+
+      // Add a timestamp to the data
+      (data as any).fetchTimestamp = new Date().toISOString();
+
+      this.emit("tickerData", data, symbol.toLowerCase());
+      console.log(`[BinanceService] Received ticker data for ${symbol}:`, data);
+    } catch (error) {
+      console.error(`Error fetching ticker data for ${symbol}:`, error);
+      this.emit(
+        "error",
+        new Error(`Failed to fetch ticker data for ${symbol}`),
+      );
+    }
+  }
+
+  // Start interval for regular ticker data updates
+  private tickerDataInterval: number | null = null;
+
+  private startTickerDataInterval(): void {
+    // Clear any existing interval
+    if (this.tickerDataInterval !== null) {
+      window.clearInterval(this.tickerDataInterval);
+    }
+
+    // Set up new interval - fetch every 1 second to be more responsive to market changes
+    this.tickerDataInterval = window.setInterval(() => {
+      this.fetchTickerData(this.symbol);
+    }, 1000);
   }
 
   private handleMessage(event: MessageEvent): void {
