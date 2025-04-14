@@ -41,16 +41,11 @@ import {
   AlertTriangle,
   Shield,
 } from "lucide-react";
-import { fetchTradeLog, TradeData } from "@/api/mockApi";
+import { getTradeLog, TradeData } from "@/api/tradeLog";
 
 // Using TradeData interface from mockApi.ts
 
-interface PerformanceData {
-  winRate: number;
-  avgPnl: number;
-  totalTrades: number;
-  pnlHistory: { date: string; pnl: number }[];
-}
+import { PerformanceData } from "@/api";
 
 interface ScannerData {
   rsi: number;
@@ -76,7 +71,7 @@ const DashboardTabs = () => {
       setTradeLogLoading(true);
       setTradeLogError(null);
       try {
-        const data = await fetchTradeLog();
+        const data = await getTradeLog();
         setTradeLog(data);
       } catch (error) {
         console.error("Error fetching trade log data:", error);
@@ -89,38 +84,124 @@ const DashboardTabs = () => {
     loadTradeLogData();
   }, []);
 
-  const [performance, setPerformance] = useState<PerformanceData>({
-    winRate: 60,
-    avgPnl: 1.24,
-    totalTrades: 5,
-    pnlHistory: [
-      { date: "2023-06-01", pnl: 4.33 },
-      { date: "2023-06-02", pnl: 8.2 },
-      { date: "2023-06-03", pnl: 6.85 },
-      { date: "2023-06-04", pnl: 6.85 },
-      { date: "2023-06-05", pnl: 4.97 },
-    ],
-  });
+  const [performance, setPerformance] = useState<PerformanceData | null>(null);
+  const [performanceLoading, setPerformanceLoading] = useState<boolean>(true);
+  const [performanceError, setPerformanceError] = useState<string | null>(null);
 
-  const [scanner, setScanner] = useState<ScannerData>({
-    rsi: 58.4,
-    vwap: { above: true, value: 0.524 },
-    macd: { signal: "BULLISH", value: 0.0012, histogram: 0.0005 },
-    volume: { current: 1250000, average: 980000, increasing: true },
-    patterns: ["Bullish Engulfing", "Support Test"],
-  });
+  // Fetch performance data on component mount
+  useEffect(() => {
+    const loadPerformanceData = async () => {
+      setPerformanceLoading(true);
+      setPerformanceError(null);
+      try {
+        const data = await import("@/api/performance").then((module) =>
+          module.getPerformance(),
+        );
+        setPerformance(data);
+      } catch (error) {
+        console.error("Error fetching performance data:", error);
+        setPerformanceError(
+          "Failed to load performance data. Please try again later.",
+        );
+      } finally {
+        setPerformanceLoading(false);
+      }
+    };
 
-  const [settings, setSettings] = useState({
-    autoTrading: false,
-    stopLoss: 2.5,
-    takeProfit: 5.0,
-    telegramAlerts: true,
-    accountType: "futures",
-  });
+    loadPerformanceData();
+  }, []);
+
+  const [scanner, setScanner] = useState<ScannerData | null>(null);
+  const [scannerLoading, setScannerLoading] = useState<boolean>(true);
+  const [scannerError, setScannerError] = useState<string | null>(null);
+
+  // Fetch scanner data on component mount
+  useEffect(() => {
+    // This would be replaced with a real API call when available
+    const loadScannerData = async () => {
+      setScannerLoading(true);
+      setScannerError(null);
+      try {
+        // Simulating API call with timeout
+        await new Promise((resolve) => setTimeout(resolve, 500));
+
+        // Temporary data until real API is connected
+        setScanner({
+          rsi: 58.4,
+          vwap: { above: true, value: 0.524 },
+          macd: { signal: "BULLISH", value: 0.0012, histogram: 0.0005 },
+          volume: { current: 1250000, average: 980000, increasing: true },
+          patterns: ["Bullish Engulfing", "Support Test"],
+        });
+      } catch (error) {
+        console.error("Error fetching scanner data:", error);
+        setScannerError("Failed to load scanner data. Please try again later.");
+      } finally {
+        setScannerLoading(false);
+      }
+    };
+
+    loadScannerData();
+  }, []);
+
+  const [settings, setSettings] = useState<any>(null);
+  const [settingsLoading, setSettingsLoading] = useState<boolean>(true);
+  const [settingsError, setSettingsError] = useState<string | null>(null);
+
+  // Fetch settings data on component mount
+  useEffect(() => {
+    const loadSettingsData = async () => {
+      setSettingsLoading(true);
+      setSettingsError(null);
+      try {
+        const data = await import("@/api/settings").then((module) =>
+          module.fetchSettings(),
+        );
+        setSettings(data);
+      } catch (error) {
+        console.error("Error fetching settings data:", error);
+        setSettingsError(
+          "Failed to load settings data. Please try again later.",
+        );
+        // Set default settings if fetch fails
+        setSettings({
+          autoTrading: false,
+          stopLoss: 2.5,
+          takeProfit: 5.0,
+          telegramAlerts: true,
+          accountType: "futures",
+        });
+      } finally {
+        setSettingsLoading(false);
+      }
+    };
+
+    loadSettingsData();
+  }, []);
 
   // Handler for settings changes
-  const handleSettingChange = (setting: keyof typeof settings, value: any) => {
-    setSettings((prev) => ({ ...prev, [setting]: value }));
+  const handleSettingChange = async (setting: string, value: any) => {
+    if (!settings) return;
+
+    // Update local state immediately for responsive UI
+    setSettings((prev: any) => ({ ...prev, [setting]: value }));
+
+    try {
+      // Update settings on the server
+      const updatedSettings = await import("@/api/settings").then((module) =>
+        module.updateSettings({ [setting]: value }),
+      );
+
+      // Update local state with server response
+      setSettings(updatedSettings);
+    } catch (error) {
+      console.error("Error updating settings:", error);
+      // Revert to previous settings if update fails
+      const originalSettings = await import("@/api/settings").then((module) =>
+        module.fetchSettings(),
+      );
+      setSettings(originalSettings);
+    }
   };
 
   return (
@@ -158,8 +239,26 @@ const DashboardTabs = () => {
                 <CardDescription>Overall success rate</CardDescription>
               </CardHeader>
               <CardContent>
-                <div className="text-3xl font-bold">{performance.winRate}%</div>
-                <Progress value={performance.winRate} className="mt-2" />
+                {performanceLoading ? (
+                  <div className="flex justify-center items-center py-4">
+                    <Loader2 className="h-6 w-6 animate-spin text-primary" />
+                  </div>
+                ) : performanceError ? (
+                  <div className="text-center py-4 text-red-500">
+                    <p>{performanceError}</p>
+                  </div>
+                ) : performance ? (
+                  <>
+                    <div className="text-3xl font-bold">
+                      {performance.winRate}%
+                    </div>
+                    <Progress value={performance.winRate} className="mt-2" />
+                  </>
+                ) : (
+                  <div className="text-center py-4 text-muted-foreground">
+                    No data available
+                  </div>
+                )}
               </CardContent>
             </Card>
             <Card>
@@ -168,10 +267,24 @@ const DashboardTabs = () => {
                 <CardDescription>Per trade</CardDescription>
               </CardHeader>
               <CardContent>
-                <div className="text-3xl font-bold">
-                  {performance.avgPnl > 0 ? "+" : ""}
-                  {performance.avgPnl}%
-                </div>
+                {performanceLoading ? (
+                  <div className="flex justify-center items-center py-4">
+                    <Loader2 className="h-6 w-6 animate-spin text-primary" />
+                  </div>
+                ) : performanceError ? (
+                  <div className="text-center py-4 text-red-500">
+                    <p>{performanceError}</p>
+                  </div>
+                ) : performance ? (
+                  <div className="text-3xl font-bold">
+                    {performance.avgPnl > 0 ? "+" : ""}
+                    {performance.avgPnl}%
+                  </div>
+                ) : (
+                  <div className="text-center py-4 text-muted-foreground">
+                    No data available
+                  </div>
+                )}
               </CardContent>
             </Card>
             <Card>
@@ -180,9 +293,23 @@ const DashboardTabs = () => {
                 <CardDescription>Completed trades</CardDescription>
               </CardHeader>
               <CardContent>
-                <div className="text-3xl font-bold">
-                  {performance.totalTrades}
-                </div>
+                {performanceLoading ? (
+                  <div className="flex justify-center items-center py-4">
+                    <Loader2 className="h-6 w-6 animate-spin text-primary" />
+                  </div>
+                ) : performanceError ? (
+                  <div className="text-center py-4 text-red-500">
+                    <p>{performanceError}</p>
+                  </div>
+                ) : performance ? (
+                  <div className="text-3xl font-bold">
+                    {performance.totalTrades}
+                  </div>
+                ) : (
+                  <div className="text-center py-4 text-muted-foreground">
+                    No data available
+                  </div>
+                )}
               </CardContent>
             </Card>
           </div>
@@ -193,23 +320,61 @@ const DashboardTabs = () => {
               <CardDescription>Cumulative performance</CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="h-[300px] w-full">
-                <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={performance.pnlHistory}>
-                    <CartesianGrid strokeDasharray="3 3" opacity={0.2} />
-                    <XAxis dataKey="date" />
-                    <YAxis />
-                    <Tooltip />
-                    <Line
-                      type="monotone"
-                      dataKey="pnl"
-                      stroke="#8884d8"
-                      strokeWidth={2}
-                      dot={{ r: 4 }}
-                    />
-                  </LineChart>
-                </ResponsiveContainer>
-              </div>
+              {performanceLoading ? (
+                <div className="flex justify-center items-center h-[300px]">
+                  <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                  <span className="ml-2">Loading performance data...</span>
+                </div>
+              ) : performanceError ? (
+                <div className="text-center h-[300px] flex items-center justify-center text-red-500">
+                  <div>
+                    <p>{performanceError}</p>
+                    <button
+                      onClick={() => {
+                        setPerformanceLoading(true);
+                        import("@/api/performance")
+                          .then((module) => module.getPerformance())
+                          .then((data) => {
+                            setPerformance(data);
+                            setPerformanceError(null);
+                          })
+                          .catch((err) => {
+                            console.error("Error retrying fetch:", err);
+                            setPerformanceError(
+                              "Failed to load performance data. Please try again later.",
+                            );
+                          })
+                          .finally(() => setPerformanceLoading(false));
+                      }}
+                      className="mt-2 px-4 py-2 bg-primary text-primary-foreground rounded-md text-sm"
+                    >
+                      Retry
+                    </button>
+                  </div>
+                </div>
+              ) : performance && performance.pnlHistory ? (
+                <div className="h-[300px] w-full">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <LineChart data={performance.pnlHistory}>
+                      <CartesianGrid strokeDasharray="3 3" opacity={0.2} />
+                      <XAxis dataKey="date" />
+                      <YAxis />
+                      <Tooltip />
+                      <Line
+                        type="monotone"
+                        dataKey="value"
+                        stroke="#8884d8"
+                        strokeWidth={2}
+                        dot={{ r: 4 }}
+                      />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+              ) : (
+                <div className="text-center h-[300px] flex items-center justify-center text-muted-foreground">
+                  No performance history available
+                </div>
+              )}
             </CardContent>
           </Card>
         </TabsContent>
@@ -233,7 +398,7 @@ const DashboardTabs = () => {
                   <button
                     onClick={() => {
                       setTradeLogLoading(true);
-                      fetchTradeLog()
+                      getTradeLog()
                         .then((data) => {
                           setTradeLog(data);
                           setTradeLogError(null);
@@ -292,9 +457,13 @@ const DashboardTabs = () => {
                               )}
                             </div>
                           </TableCell>
-                          <TableCell>${trade.entry.toFixed(4)}</TableCell>
                           <TableCell>
-                            {trade.status === "OPEN"
+                            {trade.entry !== undefined
+                              ? `${trade.entry.toFixed(4)}`
+                              : "-"}
+                          </TableCell>
+                          <TableCell>
+                            {trade.status === "OPEN" || trade.exit === undefined
                               ? "-"
                               : `${trade.exit.toFixed(4)}`}
                           </TableCell>
@@ -307,7 +476,7 @@ const DashboardTabs = () => {
                                   : ""
                             }
                           >
-                            {trade.status === "OPEN"
+                            {trade.status === "OPEN" || trade.pnl === undefined
                               ? "-"
                               : `${trade.pnl > 0 ? "+" : ""}${trade.pnl.toFixed(2)}%`}
                           </TableCell>
@@ -343,85 +512,134 @@ const DashboardTabs = () => {
                 <CardDescription>Current market conditions</CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <h3 className="text-sm font-medium">RSI (14)</h3>
-                    <div className="flex items-center mt-1">
-                      <div className="text-xl font-semibold">
-                        {scanner.rsi.toFixed(1)}
-                      </div>
-                      <Badge
-                        className="ml-2"
-                        variant={
-                          scanner.rsi > 70
-                            ? "destructive"
-                            : scanner.rsi < 30
-                              ? "default"
-                              : "secondary"
-                        }
-                      >
-                        {scanner.rsi > 70
-                          ? "Overbought"
-                          : scanner.rsi < 30
-                            ? "Oversold"
-                            : "Neutral"}
-                      </Badge>
-                    </div>
-                    <Progress value={scanner.rsi} max={100} className="mt-2" />
+                {scannerLoading ? (
+                  <div className="flex justify-center items-center py-8">
+                    <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                    <span className="ml-2">Loading scanner data...</span>
                   </div>
-                  <div>
-                    <h3 className="text-sm font-medium">VWAP</h3>
-                    <div className="flex items-center mt-1">
-                      <div className="text-xl font-semibold">
-                        ${scanner.vwap.value.toFixed(4)}
-                      </div>
-                      <Badge
-                        className="ml-2"
-                        variant={scanner.vwap.above ? "default" : "destructive"}
-                      >
-                        {scanner.vwap.above ? "Above" : "Below"}
-                      </Badge>
-                    </div>
+                ) : scannerError ? (
+                  <div className="text-center py-8 text-red-500">
+                    <p>{scannerError}</p>
+                    <button
+                      onClick={() => {
+                        setScannerLoading(true);
+                        // Simulate API call with timeout
+                        setTimeout(() => {
+                          setScanner({
+                            rsi: 58.4,
+                            vwap: { above: true, value: 0.524 },
+                            macd: {
+                              signal: "BULLISH",
+                              value: 0.0012,
+                              histogram: 0.0005,
+                            },
+                            volume: {
+                              current: 1250000,
+                              average: 980000,
+                              increasing: true,
+                            },
+                            patterns: ["Bullish Engulfing", "Support Test"],
+                          });
+                          setScannerError(null);
+                          setScannerLoading(false);
+                        }, 500);
+                      }}
+                      className="mt-2 px-4 py-2 bg-primary text-primary-foreground rounded-md text-sm"
+                    >
+                      Retry
+                    </button>
                   </div>
-                  <div>
-                    <h3 className="text-sm font-medium">MACD</h3>
-                    <div className="flex items-center mt-1">
-                      <div className="text-xl font-semibold">
-                        {scanner.macd.value.toFixed(4)}
-                      </div>
-                      <Badge
-                        className="ml-2"
-                        variant={
-                          scanner.macd.signal === "BULLISH"
-                            ? "default"
-                            : scanner.macd.signal === "BEARISH"
+                ) : scanner ? (
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <h3 className="text-sm font-medium">RSI (14)</h3>
+                      <div className="flex items-center mt-1">
+                        <div className="text-xl font-semibold">
+                          {scanner.rsi.toFixed(1)}
+                        </div>
+                        <Badge
+                          className="ml-2"
+                          variant={
+                            scanner.rsi > 70
                               ? "destructive"
-                              : "secondary"
-                        }
-                      >
-                        {scanner.macd.signal}
-                      </Badge>
-                    </div>
-                  </div>
-                  <div>
-                    <h3 className="text-sm font-medium">Volume</h3>
-                    <div className="flex items-center mt-1">
-                      <div className="text-xl font-semibold">
-                        {(scanner.volume.current / 1000000).toFixed(1)}M
+                              : scanner.rsi < 30
+                                ? "default"
+                                : "secondary"
+                          }
+                        >
+                          {scanner.rsi > 70
+                            ? "Overbought"
+                            : scanner.rsi < 30
+                              ? "Oversold"
+                              : "Neutral"}
+                        </Badge>
                       </div>
-                      <Badge
-                        className="ml-2"
-                        variant={
-                          scanner.volume.increasing ? "default" : "secondary"
-                        }
-                      >
-                        {scanner.volume.increasing
-                          ? "Increasing"
-                          : "Decreasing"}
-                      </Badge>
+                      <Progress
+                        value={scanner.rsi}
+                        max={100}
+                        className="mt-2"
+                      />
+                    </div>
+                    <div>
+                      <h3 className="text-sm font-medium">VWAP</h3>
+                      <div className="flex items-center mt-1">
+                        <div className="text-xl font-semibold">
+                          ${scanner.vwap.value.toFixed(4)}
+                        </div>
+                        <Badge
+                          className="ml-2"
+                          variant={
+                            scanner.vwap.above ? "default" : "destructive"
+                          }
+                        >
+                          {scanner.vwap.above ? "Above" : "Below"}
+                        </Badge>
+                      </div>
+                    </div>
+                    <div>
+                      <h3 className="text-sm font-medium">MACD</h3>
+                      <div className="flex items-center mt-1">
+                        <div className="text-xl font-semibold">
+                          {scanner.macd.value.toFixed(4)}
+                        </div>
+                        <Badge
+                          className="ml-2"
+                          variant={
+                            scanner.macd.signal === "BULLISH"
+                              ? "default"
+                              : scanner.macd.signal === "BEARISH"
+                                ? "destructive"
+                                : "secondary"
+                          }
+                        >
+                          {scanner.macd.signal}
+                        </Badge>
+                      </div>
+                    </div>
+                    <div>
+                      <h3 className="text-sm font-medium">Volume</h3>
+                      <div className="flex items-center mt-1">
+                        <div className="text-xl font-semibold">
+                          {(scanner.volume.current / 1000000).toFixed(1)}M
+                        </div>
+                        <Badge
+                          className="ml-2"
+                          variant={
+                            scanner.volume.increasing ? "default" : "secondary"
+                          }
+                        >
+                          {scanner.volume.increasing
+                            ? "Increasing"
+                            : "Decreasing"}
+                        </Badge>
+                      </div>
                     </div>
                   </div>
-                </div>
+                ) : (
+                  <div className="text-center py-8 text-muted-foreground">
+                    No scanner data available
+                  </div>
+                )}
               </CardContent>
             </Card>
 
@@ -431,7 +649,15 @@ const DashboardTabs = () => {
                 <CardDescription>Detected chart patterns</CardDescription>
               </CardHeader>
               <CardContent>
-                {scanner.patterns.length > 0 ? (
+                {scannerLoading ? (
+                  <div className="flex justify-center items-center py-8">
+                    <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                  </div>
+                ) : scannerError ? (
+                  <div className="text-center py-8 text-red-500">
+                    <p>{scannerError}</p>
+                  </div>
+                ) : scanner && scanner.patterns.length > 0 ? (
                   <div className="space-y-2">
                     {scanner.patterns.map((pattern, index) => (
                       <div
@@ -562,108 +788,153 @@ const DashboardTabs = () => {
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <Label htmlFor="auto-trading" className="text-base">
-                    Auto Trading
-                  </Label>
-                  <p className="text-sm text-muted-foreground">
-                    Automatically execute trades based on signals
-                  </p>
+              {settingsLoading ? (
+                <div className="flex justify-center items-center py-8">
+                  <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                  <span className="ml-2">Loading settings...</span>
                 </div>
-                <Switch
-                  id="auto-trading"
-                  checked={settings.autoTrading}
-                  onCheckedChange={(checked) =>
-                    handleSettingChange("autoTrading", checked)
-                  }
-                />
-              </div>
-
-              <div className="space-y-4">
-                <div>
+              ) : settingsError ? (
+                <div className="text-center py-8 text-red-500">
+                  <p>{settingsError}</p>
+                  <button
+                    onClick={() => {
+                      setSettingsLoading(true);
+                      import("@/api/settings")
+                        .then((module) => module.fetchSettings())
+                        .then((data) => {
+                          setSettings(data);
+                          setSettingsError(null);
+                        })
+                        .catch((err) => {
+                          console.error("Error retrying fetch:", err);
+                          setSettingsError(
+                            "Failed to load settings data. Please try again later.",
+                          );
+                          setSettings({
+                            autoTrading: false,
+                            stopLoss: 2.5,
+                            takeProfit: 5.0,
+                            telegramAlerts: true,
+                            accountType: "futures",
+                          });
+                        })
+                        .finally(() => setSettingsLoading(false));
+                    }}
+                    className="mt-2 px-4 py-2 bg-primary text-primary-foreground rounded-md text-sm"
+                  >
+                    Retry
+                  </button>
+                </div>
+              ) : settings ? (
+                <>
                   <div className="flex items-center justify-between">
-                    <Label htmlFor="stop-loss" className="text-base">
-                      Stop Loss (%)
-                    </Label>
-                    <span className="text-sm font-medium">
-                      {settings.stopLoss}%
-                    </span>
+                    <div>
+                      <Label htmlFor="auto-trading" className="text-base">
+                        Auto Trading
+                      </Label>
+                      <p className="text-sm text-muted-foreground">
+                        Automatically execute trades based on signals
+                      </p>
+                    </div>
+                    <Switch
+                      id="auto-trading"
+                      checked={settings.autoTrading}
+                      onCheckedChange={(checked) =>
+                        handleSettingChange("autoTrading", checked)
+                      }
+                    />
                   </div>
-                  <Slider
-                    id="stop-loss"
-                    min={0.5}
-                    max={10}
-                    step={0.5}
-                    value={[settings.stopLoss]}
-                    onValueChange={(value) =>
-                      handleSettingChange("stopLoss", value[0])
-                    }
-                    className="mt-2"
-                  />
-                </div>
 
-                <div>
-                  <div className="flex items-center justify-between">
-                    <Label htmlFor="take-profit" className="text-base">
-                      Take Profit (%)
-                    </Label>
-                    <span className="text-sm font-medium">
-                      {settings.takeProfit}%
-                    </span>
+                  <div className="space-y-4">
+                    <div>
+                      <div className="flex items-center justify-between">
+                        <Label htmlFor="stop-loss" className="text-base">
+                          Stop Loss (%)
+                        </Label>
+                        <span className="text-sm font-medium">
+                          {settings.stopLoss}%
+                        </span>
+                      </div>
+                      <Slider
+                        id="stop-loss"
+                        min={0.5}
+                        max={10}
+                        step={0.5}
+                        value={[settings.stopLoss]}
+                        onValueChange={(value) =>
+                          handleSettingChange("stopLoss", value[0])
+                        }
+                        className="mt-2"
+                      />
+                    </div>
+
+                    <div>
+                      <div className="flex items-center justify-between">
+                        <Label htmlFor="take-profit" className="text-base">
+                          Take Profit (%)
+                        </Label>
+                        <span className="text-sm font-medium">
+                          {settings.takeProfit}%
+                        </span>
+                      </div>
+                      <Slider
+                        id="take-profit"
+                        min={1}
+                        max={20}
+                        step={0.5}
+                        value={[settings.takeProfit]}
+                        onValueChange={(value) =>
+                          handleSettingChange("takeProfit", value[0])
+                        }
+                        className="mt-2"
+                      />
+                    </div>
                   </div>
-                  <Slider
-                    id="take-profit"
-                    min={1}
-                    max={20}
-                    step={0.5}
-                    value={[settings.takeProfit]}
-                    onValueChange={(value) =>
-                      handleSettingChange("takeProfit", value[0])
-                    }
-                    className="mt-2"
-                  />
-                </div>
-              </div>
 
-              <div className="flex items-center justify-between pt-2">
-                <div>
-                  <Label htmlFor="telegram-alerts" className="text-base">
-                    Telegram Alerts
-                  </Label>
-                  <p className="text-sm text-muted-foreground">
-                    Receive notifications via Telegram
-                  </p>
-                </div>
-                <Switch
-                  id="telegram-alerts"
-                  checked={settings.telegramAlerts}
-                  onCheckedChange={(checked) =>
-                    handleSettingChange("telegramAlerts", checked)
-                  }
-                />
-              </div>
+                  <div className="flex items-center justify-between pt-2">
+                    <div>
+                      <Label htmlFor="telegram-alerts" className="text-base">
+                        Telegram Alerts
+                      </Label>
+                      <p className="text-sm text-muted-foreground">
+                        Receive notifications via Telegram
+                      </p>
+                    </div>
+                    <Switch
+                      id="telegram-alerts"
+                      checked={settings.telegramAlerts}
+                      onCheckedChange={(checked) =>
+                        handleSettingChange("telegramAlerts", checked)
+                      }
+                    />
+                  </div>
 
-              <div className="flex items-center justify-between pt-2">
-                <div>
-                  <Label htmlFor="account-type" className="text-base">
-                    Futures Trading
-                  </Label>
-                  <p className="text-sm text-muted-foreground">
-                    Use Binance Futures account for trading
-                  </p>
+                  <div className="flex items-center justify-between pt-2">
+                    <div>
+                      <Label htmlFor="account-type" className="text-base">
+                        Futures Trading
+                      </Label>
+                      <p className="text-sm text-muted-foreground">
+                        Use Binance Futures account for trading
+                      </p>
+                    </div>
+                    <Switch
+                      id="account-type"
+                      checked={settings.accountType === "futures"}
+                      onCheckedChange={(checked) =>
+                        handleSettingChange(
+                          "accountType",
+                          checked ? "futures" : "spot",
+                        )
+                      }
+                    />
+                  </div>
+                </>
+              ) : (
+                <div className="text-center py-8 text-muted-foreground">
+                  No settings available
                 </div>
-                <Switch
-                  id="account-type"
-                  checked={settings.accountType === "futures"}
-                  onCheckedChange={(checked) =>
-                    handleSettingChange(
-                      "accountType",
-                      checked ? "futures" : "spot",
-                    )
-                  }
-                />
-              </div>
+              )}
             </CardContent>
           </Card>
         </TabsContent>

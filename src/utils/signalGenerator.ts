@@ -39,6 +39,7 @@ interface Indicators {
   bollingerMiddle?: number;
   bollingerLower?: number;
   bollingerWidth?: number;
+  currentPrice?: number; // Added for ML model
 }
 
 // Class to store and analyze recent trade data
@@ -57,7 +58,7 @@ class TradeAnalyzer {
   > = new Map();
 
   private maxTrades = 200; // Increased to have more data for indicators
-  private signalCooldown = 0; // No cooldown between signals to ensure immediate updates
+  private signalCooldown = 180000; // 3 minutes cooldown between signals to reduce fluctuations
   private currentSymbol = "ethusdt"; // Default symbol
 
   // Initialize data structure for a new symbol
@@ -181,11 +182,26 @@ class TradeAnalyzer {
       console.log(
         `Signal in cooldown period, returning last signal for ${targetSymbol}`,
       );
+      // Add timestamp to indicate when the cached signal was returned
+      symbolData.lastSignal.timestamp = `${new Date().toISOString().replace("T", " ").slice(0, 19)} (${timeframe}) [cached]`;
       return symbolData.lastSignal;
     }
 
-    // No cooldown to ensure immediate signal updates
-    this.signalCooldown = 0; // No cooldown
+    // Maintain cooldown period to reduce signal fluctuations
+    // Adjust cooldown based on timeframe - longer timeframes need longer cooldowns
+    if (timeframe === "1m")
+      this.signalCooldown = 60000; // 1 minute
+    else if (timeframe === "5m")
+      this.signalCooldown = 180000; // 3 minutes
+    else if (timeframe === "15m")
+      this.signalCooldown = 300000; // 5 minutes
+    else if (timeframe === "1h")
+      this.signalCooldown = 600000; // 10 minutes
+    else if (timeframe === "4h")
+      this.signalCooldown = 1200000; // 20 minutes
+    else if (timeframe === "1d")
+      this.signalCooldown = 3600000; // 1 hour
+    else this.signalCooldown = 180000; // Default 3 minutes
 
     // Need at least some trades to generate a signal
     if (symbolData.recentTrades.length < 20) {
@@ -198,6 +214,9 @@ class TradeAnalyzer {
 
     // Current price is the most recent trade price
     const currentPrice = symbolData.priceHistory[0];
+    console.log(
+      `[SignalGenerator] Using current price for ${targetSymbol}: ${currentPrice}`,
+    );
     indicators.currentPrice = currentPrice; // Add current price to indicators for ML model
 
     // Volume analysis
@@ -209,6 +228,19 @@ class TradeAnalyzer {
     const shortTermPriceChange = this.calculatePriceChange(5, targetSymbol); // Last 5 trades
     const mediumTermPriceChange = this.calculatePriceChange(10, targetSymbol); // Last 10 trades
     const longTermPriceChange = this.calculatePriceChange(20, targetSymbol); // Last 20 trades
+
+    // Use more data points for recent highs/lows based on volatility
+    let volatilityFactor =
+      indicators.bollingerWidth !== undefined
+        ? Math.max(10, Math.min(50, Math.round(50 * indicators.bollingerWidth)))
+        : 20;
+
+    const recentLow = Math.min(
+      ...symbolData.priceHistory.slice(0, volatilityFactor),
+    );
+    const recentHigh = Math.max(
+      ...symbolData.priceHistory.slice(0, volatilityFactor),
+    );
 
     // Generate ML prediction with enhanced features
     const features = prepareFeatures(
@@ -433,18 +465,11 @@ class TradeAnalyzer {
     // For BUY signals: stop loss below recent low, target above based on dynamic risk/reward
     // For SELL signals: stop loss above recent high, target below based on dynamic risk/reward
 
-    // Use more data points for recent highs/lows based on volatility
-    const volatilityFactor =
-      bollingerWidth !== undefined
-        ? Math.max(10, Math.min(50, Math.round(50 * bollingerWidth)))
+    // Reuse the previously defined volatilityFactor
+    volatilityFactor =
+      indicators.bollingerWidth !== undefined
+        ? Math.max(10, Math.min(50, Math.round(50 * indicators.bollingerWidth)))
         : 20;
-
-    const recentLow = Math.min(
-      ...symbolData.priceHistory.slice(0, volatilityFactor),
-    );
-    const recentHigh = Math.max(
-      ...symbolData.priceHistory.slice(0, volatilityFactor),
-    );
 
     // Calculate price volatility as a percentage
     const priceRange = recentHigh - recentLow;
@@ -589,9 +614,10 @@ class TradeAnalyzer {
       targetPrice = entryPoint * (1 + holdRiskPercentage * 1.5);
     }
 
-    // Format timestamp with timeframe
+    // Format timestamp with timeframe and ensure it's always current
     const date = new Date();
     const timestamp = `${date.toISOString().replace("T", " ").slice(0, 19)} (${timeframe})`;
+    console.log(`[SignalGenerator] Generated fresh timestamp: ${timestamp}`);
 
     // Create the signal
     const generatedSignal: GeneratedSignal = {
@@ -893,10 +919,59 @@ export function processTrade(
   trade: BinanceTradeEvent,
   timeframe: string,
   symbol?: string,
+  forceRefresh: boolean = false,
 ): GeneratedSignal | null {
+  // Ensure we have a valid symbol
+  if (!symbol && (!trade || !trade.s)) {
+    console.error("[SignalGenerator] No symbol provided for signal generation");
+    return null;
+  }
   const targetSymbol = symbol || trade.s.toLowerCase();
+
+  // Log the trade data for debugging
+  console.log(
+    `[SignalGenerator] Processing trade for ${targetSymbol} on ${timeframe}:`,
+    {
+      price: parseFloat(trade.p),
+      quantity: parseFloat(trade.q),
+      time: new Date(parseInt(trade.T)).toISOString(),
+      isFutures: true, // Mark as futures data
+    },
+  );
+
+  // Add the trade to the analyzer
   tradeAnalyzer.addTrade(trade, targetSymbol);
-  return tradeAnalyzer.generateSignal(timeframe, targetSymbol);
+
+  // If forceRefresh is true, clear existing data to ensure fresh signal generation
+  if (forceRefresh) {
+    console.log(
+      `[SignalGenerator] Force refreshing signal data for ${targetSymbol}`,
+    );
+    clearAnalyzerData(targetSymbol);
+    tradeAnalyzer.addTrade(trade, targetSymbol);
+  }
+
+  // Generate a signal based on the updated data
+  const signal = tradeAnalyzer.generateSignal(timeframe, targetSymbol);
+
+  // Log the generated signal for debugging
+  if (signal) {
+    console.log(
+      `[SignalGenerator] Generated ${signal.signal} signal for ${targetSymbol} on ${timeframe} with ${signal.confidence}% confidence`,
+      {
+        entryPoint: signal.entryPoint,
+        stopLoss: signal.stopLoss,
+        targetPrice: signal.targetPrice,
+        timestamp: signal.timestamp,
+      },
+    );
+  } else {
+    console.log(
+      `[SignalGenerator] No signal generated for ${targetSymbol} on ${timeframe} (insufficient data)`,
+    );
+  }
+
+  return signal;
 }
 
 // Function to get the current price

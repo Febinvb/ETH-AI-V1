@@ -2,10 +2,10 @@
 module.exports = {
   darkMode: ["class"],
   content: [
-    './pages/**/*.{ts,tsx}',
-    './components/**/*.{ts,tsx}',
-    './app/**/*.{ts,tsx}',
-    './src/**/*.{ts,tsx}',
+    "./pages/**/*.{ts,tsx}",
+    "./components/**/*.{ts,tsx}",
+    "./app/**/*.{ts,tsx}",
+    "./src/**/*.{ts,tsx}",
   ],
   prefix: "",
   theme: {
@@ -51,6 +51,25 @@ module.exports = {
           DEFAULT: "hsl(var(--card))",
           foreground: "hsl(var(--card-foreground))",
         },
+        // Trading dashboard specific colors
+        trading: {
+          profit: "hsl(var(--trading-profit))",
+          loss: "hsl(var(--trading-loss))",
+          neutral: "hsl(var(--trading-neutral))",
+          buy: "hsl(var(--trading-buy))",
+          sell: "hsl(var(--trading-sell))",
+          hold: "hsl(var(--trading-hold))",
+          chart: "hsl(var(--trading-chart))",
+          signal: "hsl(var(--trading-signal))",
+        },
+        // Gradient backgrounds
+        gradient: {
+          primary: "var(--gradient-primary)",
+          secondary: "var(--gradient-secondary)",
+          accent: "var(--gradient-accent)",
+          dashboard: "var(--gradient-dashboard)",
+          card: "var(--gradient-card)",
+        },
       },
       borderRadius: {
         lg: "var(--radius)",
@@ -66,12 +85,24 @@ module.exports = {
           from: { height: "var(--radix-accordion-content-height)" },
           to: { height: "0" },
         },
+        "pulse-glow": {
+          "0%, 100%": { opacity: 1 },
+          "50%": { opacity: 0.7 },
+        },
       },
       animation: {
         "accordion-down": "accordion-down 0.2s ease-out",
         "accordion-up": "accordion-up 0.2s ease-out",
+        "pulse-glow": "pulse-glow 2s cubic-bezier(0.4, 0, 0.6, 1) infinite",
+      },
+      backgroundImage: {
+        "gradient-dashboard": "var(--gradient-dashboard)",
+        "gradient-card": "var(--gradient-card)",
+        "gradient-primary": "var(--gradient-primary)",
+        "gradient-secondary": "var(--gradient-secondary)",
+        "gradient-accent": "var(--gradient-accent)",
       },
     },
   },
   plugins: [require("tailwindcss-animate")],
-}
+};

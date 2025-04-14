@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { AlertCircle, RefreshCw, CheckCircle2 } from "lucide-react";
-import { SignalData } from "@/api/mockApi";
+import { SignalData } from "@/api/signal";
+import { changeSymbol } from "@/api/signal";
 
 interface SyncControllerProps {
   chartTimeframe: string;
@@ -26,20 +27,40 @@ const SyncController = ({
     setSynced(chartTimeframe === signalTimeframe);
   }, [chartTimeframe, signalTimeframe]);
 
-  const handleSync = () => {
+  const handleSync = (e: React.MouseEvent) => {
+    // Prevent default browser behavior that might cause page reload
+    e.preventDefault();
+    e.stopPropagation();
+
     setLoading(true);
     // Sync the timeframes by using the chart's timeframe
     onSyncTimeframes(chartTimeframe);
+    console.log(`[SyncController] Syncing timeframes to: ${chartTimeframe}`);
 
     // No need to simulate a delay since we're actually fetching data
     // The parent component will handle the actual data fetching
     setLastUpdated(new Date());
+
+    // Set loading to false after a short delay if not already done by parent
+    setTimeout(() => {
+      setLoading(false);
+    }, 1000);
   };
 
-  const handleRefresh = () => {
+  const handleRefresh = (e: React.MouseEvent) => {
+    // Prevent default browser behavior that might cause page reload
+    e.preventDefault();
+    e.stopPropagation();
+
     setLoading(true);
+    console.log(`[SyncController] Refreshing data`);
     onRefreshData();
     setLastUpdated(new Date());
+
+    // Set loading to false after a short delay if not already done by parent
+    setTimeout(() => {
+      setLoading(false);
+    }, 1000);
   };
 
   return (
@@ -80,6 +101,7 @@ const SyncController = ({
               size="sm"
               onClick={handleSync}
               disabled={loading}
+              type="button"
             >
               {loading ? (
                 <>
@@ -96,6 +118,7 @@ const SyncController = ({
             size="sm"
             onClick={handleRefresh}
             disabled={loading}
+            type="button"
           >
             {loading ? (
               <RefreshCw className="h-4 w-4 animate-spin" />

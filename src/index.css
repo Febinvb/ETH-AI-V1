@@ -1,76 +1,178 @@
 @tailwind base;
-  @tailwind components;
-  @tailwind utilities;
+@tailwind components;
+@tailwind utilities;
 
-  @layer base {
-    :root {
-      --background: 0 0% 100%;
-      --foreground: 222.2 84% 4.9%;
+@layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 222.2 84% 4.9%;
 
-      --card: 0 0% 100%;
-      --card-foreground: 222.2 84% 4.9%;
+    --card: 0 0% 100%;
+    --card-foreground: 222.2 84% 4.9%;
 
-      --popover: 0 0% 100%;
-      --popover-foreground: 222.2 84% 4.9%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 222.2 84% 4.9%;
 
-      --primary: 222.2 47.4% 11.2%;
-      --primary-foreground: 210 40% 98%;
+    --primary: 222.2 47.4% 11.2%;
+    --primary-foreground: 210 40% 98%;
 
-      --secondary: 210 40% 96.1%;
-      --secondary-foreground: 222.2 47.4% 11.2%;
+    --secondary: 210 40% 96.1%;
+    --secondary-foreground: 222.2 47.4% 11.2%;
 
-      --muted: 210 40% 96.1%;
-      --muted-foreground: 215.4 16.3% 46.9%;
+    --muted: 210 40% 96.1%;
+    --muted-foreground: 215.4 16.3% 46.9%;
 
-      --accent: 210 40% 96.1%;
-      --accent-foreground: 222.2 47.4% 11.2%;
+    --accent: 210 40% 96.1%;
+    --accent-foreground: 222.2 47.4% 11.2%;
 
-      --destructive: 0 84.2% 60.2%;
-      --destructive-foreground: 210 40% 98%;
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 210 40% 98%;
 
-      --border: 214.3 31.8% 91.4%;
-      --input: 214.3 31.8% 91.4%;
-      --ring: 222.2 84% 4.9%;
+    --border: 214.3 31.8% 91.4%;
+    --input: 214.3 31.8% 91.4%;
+    --ring: 222.2 84% 4.9%;
 
-      --radius: 0.5rem;
-    }
+    --radius: 0.5rem;
 
-    .dark {
-      --background: 222.2 84% 4.9%;
-      --foreground: 210 40% 98%;
+    /* Trading dashboard specific colors */
+    --trading-profit: 142.1 76.2% 36.3%;
+    --trading-loss: 0 84.2% 60.2%;
+    --trading-neutral: 48 96.5% 53.9%;
+    --trading-buy: 142.1 76.2% 36.3%;
+    --trading-sell: 0 84.2% 60.2%;
+    --trading-hold: 48 96.5% 53.9%;
+    --trading-chart: 221.2 83.2% 53.3%;
+    --trading-signal: 262.1 83.3% 57.8%;
 
-      --card: 222.2 84% 4.9%;
-      --card-foreground: 210 40% 98%;
-
-      --popover: 222.2 84% 4.9%;
-      --popover-foreground: 210 40% 98%;
-
-      --primary: 210 40% 98%;
-      --primary-foreground: 222.2 47.4% 11.2%;
-
-      --secondary: 217.2 32.6% 17.5%;
-      --secondary-foreground: 210 40% 98%;
-
-      --muted: 217.2 32.6% 17.5%;
-      --muted-foreground: 215 20.2% 65.1%;
-
-      --accent: 217.2 32.6% 17.5%;
-      --accent-foreground: 210 40% 98%;
-
-      --destructive: 0 62.8% 30.6%;
-      --destructive-foreground: 210 40% 98%;
-
-      --border: 217.2 32.6% 17.5%;
-      --input: 217.2 32.6% 17.5%;
-      --ring: 212.7 26.8% 83.9%;
-    }
+    /* Gradient backgrounds for light mode */
+    --gradient-primary: linear-gradient(135deg, #f6f8fc 0%, #e9f0f9 100%);
+    --gradient-secondary: linear-gradient(135deg, #edf2f7 0%, #dbe4f0 100%);
+    --gradient-accent: linear-gradient(135deg, #e6f7ff 0%, #c8e6ff 100%);
+    --gradient-dashboard: linear-gradient(135deg, #ffffff 0%, #f5f7fa 100%);
+    --gradient-card: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%);
   }
 
-  @layer base {
-    * {
-      @apply border-border;
-    }
-    body {
-      @apply bg-background text-foreground;
-    }
+  .dark {
+    --background: 222.2 84% 4.9%;
+    --foreground: 210 40% 98%;
+
+    --card: 222.2 84% 4.9%;
+    --card-foreground: 210 40% 98%;
+
+    --popover: 222.2 84% 4.9%;
+    --popover-foreground: 210 40% 98%;
+
+    --primary: 210 40% 98%;
+    --primary-foreground: 222.2 47.4% 11.2%;
+
+    --secondary: 217.2 32.6% 17.5%;
+    --secondary-foreground: 210 40% 98%;
+
+    --muted: 217.2 32.6% 17.5%;
+    --muted-foreground: 215 20.2% 65.1%;
+
+    --accent: 217.2 32.6% 17.5%;
+    --accent-foreground: 210 40% 98%;
+
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 210 40% 98%;
+
+    --border: 217.2 32.6% 17.5%;
+    --input: 217.2 32.6% 17.5%;
+    --ring: 212.7 26.8% 83.9%;
+
+    /* Trading dashboard specific colors for dark mode */
+    --trading-profit: 142.1 70.6% 45.3%;
+    --trading-loss: 0 72.2% 50.6%;
+    --trading-neutral: 48 96.5% 53.9%;
+    --trading-buy: 142.1 70.6% 45.3%;
+    --trading-sell: 0 72.2% 50.6%;
+    --trading-hold: 48 96.5% 53.9%;
+    --trading-chart: 221.2 83.2% 53.3%;
+    --trading-signal: 262.1 83.3% 57.8%;
+
+    /* Gradient backgrounds for dark mode */
+    --gradient-primary: linear-gradient(135deg, #1a1d29 0%, #111827 100%);
+    --gradient-secondary: linear-gradient(135deg, #1f2937 0%, #111827 100%);
+    --gradient-accent: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+    --gradient-dashboard: linear-gradient(135deg, #0f172a 0%, #1e1e2e 100%);
+    --gradient-card: linear-gradient(135deg, #1e1e2e 0%, #1a1d29 100%);
   }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+}
+
+@layer components {
+  .trading-card {
+    @apply bg-card border border-border rounded-xl shadow-sm overflow-hidden;
+  }
+
+  .trading-card-gradient {
+    @apply border border-border rounded-xl shadow-sm overflow-hidden bg-gradient-card;
+  }
+
+  .dashboard-gradient {
+    @apply bg-gradient-dashboard;
+  }
+
+  .profit-text {
+    @apply text-trading-profit;
+  }
+
+  .loss-text {
+    @apply text-trading-loss;
+  }
+
+  .buy-signal {
+    @apply text-trading-buy font-semibold;
+  }
+
+  .sell-signal {
+    @apply text-trading-sell font-semibold;
+  }
+
+  .hold-signal {
+    @apply text-trading-hold font-semibold;
+  }
+
+  /* Enhanced card styles */
+  .glass-card {
+    @apply bg-card/50 backdrop-blur-sm rounded-xl shadow-sm border border-border/30 transition-all hover:shadow-md;
+  }
+
+  .stat-card {
+    @apply glass-card p-5;
+  }
+
+  .stat-label {
+    @apply text-sm font-medium text-muted-foreground mb-1;
+  }
+
+  .stat-value {
+    @apply text-3xl font-bold;
+  }
+
+  .stat-value-profit {
+    @apply text-3xl font-bold text-trading-profit;
+  }
+
+  .stat-value-loss {
+    @apply text-3xl font-bold text-trading-loss;
+  }
+
+  /* Enhanced button styles */
+  .button-glow {
+    @apply shadow-md hover:shadow-lg transition-all;
+  }
+
+  .button-subtle {
+    @apply shadow-sm hover:shadow transition-all;
+  }
+}

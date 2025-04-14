@@ -58,8 +58,13 @@ const MarketSentiment = ({
       setLoading(true);
       try {
         const data = await fetchSentiment();
-        setSentimentData(data);
-        console.log("Live sentiment data fetched:", data);
+        if (data) {
+          setSentimentData(data);
+          console.log("Live sentiment data fetched:", data);
+        } else {
+          console.warn("No sentiment data returned from API");
+          // Keep using the initial data if no data is returned
+        }
       } catch (error) {
         console.error("Error fetching sentiment data:", error);
         // Keep using the initial data if there's an error
@@ -69,6 +74,12 @@ const MarketSentiment = ({
     };
 
     fetchData();
+
+    // Set up a refresh interval
+    const intervalId = setInterval(fetchData, 60000); // Refresh every minute
+
+    // Clean up the interval on component unmount
+    return () => clearInterval(intervalId);
   }, []);
   const getSentimentLabel = (score: number) => {
     if (score >= 75) return { label: "Bullish", variant: "default" };
@@ -84,7 +95,7 @@ const MarketSentiment = ({
   );
 
   return (
-    <Card className="bg-background">
+    <Card className="trading-card-gradient" gradient glowing>
       <CardHeader>
         <div className="flex justify-between items-center">
           <CardTitle>Market Sentiment Analysis</CardTitle>
@@ -96,7 +107,7 @@ const MarketSentiment = ({
       <CardContent className="space-y-6">
         {loading ? (
           <div className="flex flex-col items-center justify-center py-8">
-            <RefreshCw className="h-8 w-8 animate-spin text-primary mb-2" />
+            <RefreshCw className="h-8 w-8 animate-spin text-primary mb-2 animate-pulse-glow" />
             <p className="text-sm text-muted-foreground">
               Fetching live sentiment data...
             </p>
@@ -131,10 +142,10 @@ const MarketSentiment = ({
                   return (
                     <div
                       key={index}
-                      className="flex items-center justify-between p-3 bg-muted/50 rounded-lg"
+                      className="flex items-center justify-between p-3 bg-muted/50 rounded-lg hover:bg-gradient-secondary transition-all duration-300"
                     >
                       <div className="flex items-center gap-3">
-                        <div className="bg-background p-2 rounded-full">
+                        <div className="bg-gradient-primary p-2 rounded-full shadow-sm">
                           {source.icon}
                         </div>
                         <div>
@@ -150,7 +161,7 @@ const MarketSentiment = ({
                       <div className="text-right">
                         <p className="text-xl font-bold">{source.score}%</p>
                         <div
-                          className={`flex items-center ${source.change > 0 ? "text-green-500" : "text-red-500"}`}
+                          className={`flex items-center ${source.change > 0 ? "profit-text" : "loss-text"}`}
                         >
                           {source.change > 0 ? (
                             <ArrowUp className="h-3 w-3 mr-1" />
